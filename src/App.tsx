@@ -1,7 +1,7 @@
-import Stock from './components/Stock';
+import PendingPurchases from './components/PendingPurchases';
 
 function App() {
-  return <Stock />;
+  return <PendingPurchases />;
 }
 
 export default App;
