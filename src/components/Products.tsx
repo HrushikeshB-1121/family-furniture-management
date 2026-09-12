@@ -6,17 +6,11 @@ type Category = {
   name: string;
 };
 
-type Supplier = {
-  id: number;
-  name: string;
-};
-
 type Product = {
   id: number;
   sku: string;
   name: string;
   category_id: number;
-  supplier_id: number | null;
   default_selling_price: number | null;
   unit: string;
   size: string | null;
@@ -32,7 +26,6 @@ type ProductForm = {
   sku: string;
   name: string;
   category_id: string;
-  supplier_id: string;
   default_purchase_cost: string;
   default_selling_price: string;
   unit: string;
@@ -48,7 +41,6 @@ const emptyForm: ProductForm = {
   sku: '',
   name: '',
   category_id: '',
-  supplier_id: '',
   default_purchase_cost: '',
   default_selling_price: '',
   unit: 'piece',
@@ -62,22 +54,21 @@ const emptyForm: ProductForm = {
 
 function Products() {
   const [categories, setCategories] = useState<Category[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
 
   const [form, setForm] = useState<ProductForm>({
     ...emptyForm,
   });
 
-  const [editingProductId, setEditingProductId] = useState<
-    number | null
-  >(null);
+  const [editingProductId, setEditingProductId] =
+    useState<number | null>(null);
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -89,60 +80,42 @@ function Products() {
     setLoading(true);
     setErrorMessage('');
 
-    const [
-      categoriesResult,
-      suppliersResult,
-      productsResult,
-      costsResult,
-    ] = await Promise.all([
-      supabase
-        .from('categories')
-        .select('id, name')
-        .eq('is_active', true)
-        .order('name'),
+    const [categoriesResult, productsResult, costsResult] =
+      await Promise.all([
+        supabase
+          .from('categories')
+          .select('id, name')
+          .eq('is_active', true)
+          .order('name'),
 
-      supabase
-        .from('suppliers')
-        .select('id, name')
-        .eq('is_active', true)
-        .order('name'),
+        supabase
+          .from('products')
+          .select(`
+            id,
+            sku,
+            name,
+            category_id,
+            default_selling_price,
+            unit,
+            size,
+            model,
+            box_type,
+            thickness,
+            seating_capacity,
+            specification
+          `)
+          .eq('is_active', true)
+          .order('name'),
 
-      supabase
-        .from('products')
-        .select(`
-          id,
-          sku,
-          name,
-          category_id,
-          supplier_id,
-          default_selling_price,
-          unit,
-          size,
-          model,
-          box_type,
-          thickness,
-          seating_capacity,
-          specification
-        `)
-        .eq('is_active', true)
-        .order('name'),
-
-      supabase
-        .from('product_costs')
-        .select('product_id, default_purchase_cost'),
-    ]);
+        supabase
+          .from('product_costs')
+          .select('product_id, default_purchase_cost'),
+      ]);
 
     if (categoriesResult.error) {
       console.error(
         'Failed to load categories:',
         categoriesResult.error,
-      );
-    }
-
-    if (suppliersResult.error) {
-      console.error(
-        'Failed to load suppliers:',
-        suppliersResult.error,
       );
     }
 
@@ -175,11 +148,11 @@ function Products() {
       productsResult.data ?? []
     ).map((product) => ({
       ...product,
-      default_purchase_cost: costMap.get(product.id) ?? null,
+      default_purchase_cost:
+        costMap.get(product.id) ?? null,
     }));
 
     setCategories(categoriesResult.data ?? []);
-    setSuppliers(suppliersResult.data ?? []);
     setProducts(loadedProducts);
 
     setLoading(false);
@@ -232,7 +205,9 @@ function Products() {
       form.default_purchase_cost &&
       Number(form.default_purchase_cost) < 0
     ) {
-      setErrorMessage('Purchase cost cannot be negative.');
+      setErrorMessage(
+        'Purchase cost cannot be negative.',
+      );
       return;
     }
 
@@ -240,7 +215,9 @@ function Products() {
       form.default_selling_price &&
       Number(form.default_selling_price) < 0
     ) {
-      setErrorMessage('Selling price cannot be negative.');
+      setErrorMessage(
+        'Selling price cannot be negative.',
+      );
       return;
     }
 
@@ -248,7 +225,9 @@ function Products() {
       form.seating_capacity &&
       Number(form.seating_capacity) < 1
     ) {
-      setErrorMessage('Seating capacity must be at least 1.');
+      setErrorMessage(
+        'Seating capacity must be at least 1.',
+      );
       return;
     }
 
@@ -259,12 +238,10 @@ function Products() {
         sku: form.sku.trim(),
         name: form.name.trim(),
         category_id: Number(form.category_id),
-        supplier_id: form.supplier_id
-          ? Number(form.supplier_id)
-          : null,
-        default_selling_price: form.default_selling_price
-          ? Number(form.default_selling_price)
-          : null,
+        default_selling_price:
+          form.default_selling_price
+            ? Number(form.default_selling_price)
+            : null,
         unit: form.unit.trim() || 'piece',
         size: form.size.trim() || null,
         model: form.model.trim() || null,
@@ -273,7 +250,8 @@ function Products() {
         seating_capacity: form.seating_capacity
           ? Number(form.seating_capacity)
           : null,
-        specification: form.specification.trim() || null,
+        specification:
+          form.specification.trim() || null,
       };
 
       let productId: number;
@@ -286,7 +264,10 @@ function Products() {
           .single();
 
         if (error || !data) {
-          throw error ?? new Error('Failed to create product.');
+          throw (
+            error ??
+            new Error('Failed to create product.')
+          );
         }
 
         productId = data.id;
@@ -303,21 +284,22 @@ function Products() {
         productId = editingProductId;
       }
 
-      const purchaseCost = form.default_purchase_cost
-        ? Number(form.default_purchase_cost)
-        : null;
+      const purchaseCost =
+        form.default_purchase_cost
+          ? Number(form.default_purchase_cost)
+          : null;
 
       if (purchaseCost === null) {
-        const { error: costDeleteError } = await supabase
+        const { error } = await supabase
           .from('product_costs')
           .delete()
           .eq('product_id', productId);
 
-        if (costDeleteError) {
-          throw costDeleteError;
+        if (error) {
+          throw error;
         }
       } else {
-        const { error: costError } = await supabase
+        const { error } = await supabase
           .from('product_costs')
           .upsert({
             product_id: productId,
@@ -325,8 +307,8 @@ function Products() {
             updated_at: new Date().toISOString(),
           });
 
-        if (costError) {
-          throw costError;
+        if (error) {
+          throw error;
         }
       }
 
@@ -339,7 +321,10 @@ function Products() {
       resetForm();
       await loadData();
     } catch (error) {
-      console.error('Failed to save product:', error);
+      console.error(
+        'Failed to save product:',
+        error,
+      );
 
       setErrorMessage(
         error instanceof Error
@@ -358,10 +343,6 @@ function Products() {
       sku: product.sku,
       name: product.name,
       category_id: String(product.category_id),
-      supplier_id:
-        product.supplier_id !== null
-          ? String(product.supplier_id)
-          : '',
       default_purchase_cost:
         product.default_purchase_cost !== null
           ? String(product.default_purchase_cost)
@@ -379,7 +360,8 @@ function Products() {
         product.seating_capacity !== null
           ? String(product.seating_capacity)
           : '',
-      specification: product.specification ?? '',
+      specification:
+        product.specification ?? '',
     });
 
     setMessage('');
@@ -391,7 +373,9 @@ function Products() {
     });
   }
 
-  async function deactivateProduct(product: Product) {
+  async function deactivateProduct(
+    product: Product,
+  ) {
     const confirmed = window.confirm(
       'Deactivate "' +
         product.name +
@@ -423,39 +407,37 @@ function Products() {
       resetForm();
     }
 
-    setMessage('Product deactivated successfully.');
+    setMessage(
+      'Product deactivated successfully.',
+    );
 
     await loadData();
   }
 
-  function getCategoryName(categoryId: number) {
+  function getCategoryName(
+    categoryId: number,
+  ) {
     return (
       categories.find(
-        (category) => category.id === categoryId,
-      )?.name ?? '-'
-    );
-  }
-
-  function getSupplierName(supplierId: number | null) {
-    if (supplierId === null) {
-      return '-';
-    }
-
-    return (
-      suppliers.find(
-        (supplier) => supplier.id === supplierId,
+        (category) =>
+          category.id === categoryId,
       )?.name ?? '-'
     );
   }
 
   const filteredProducts = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
+    const normalizedSearch =
+      search.trim().toLowerCase();
 
     return products.filter((product) => {
       const matchesSearch =
         normalizedSearch === '' ||
-        product.sku.toLowerCase().includes(normalizedSearch) ||
-        product.name.toLowerCase().includes(normalizedSearch) ||
+        product.sku
+          .toLowerCase()
+          .includes(normalizedSearch) ||
+        product.name
+          .toLowerCase()
+          .includes(normalizedSearch) ||
         (product.model ?? '')
           .toLowerCase()
           .includes(normalizedSearch) ||
@@ -465,11 +447,16 @@ function Products() {
 
       const matchesCategory =
         categoryFilter === '' ||
-        String(product.category_id) === categoryFilter;
+        String(product.category_id) ===
+          categoryFilter;
 
       return matchesSearch && matchesCategory;
     });
-  }, [products, search, categoryFilter]);
+  }, [
+    products,
+    search,
+    categoryFilter,
+  ]);
 
   if (loading) {
     return <p>Loading products...</p>;
@@ -479,7 +466,10 @@ function Products() {
     <main className="products-page">
       <h1>Products</h1>
 
-      <form onSubmit={handleSubmit} className="product-form">
+      <form
+        onSubmit={handleSubmit}
+        className="product-form"
+      >
         <h2>
           {editingProductId === null
             ? 'Add Product'
@@ -505,25 +495,16 @@ function Products() {
           value={form.category_id}
           onChange={handleChange}
         >
-          <option value="">Select category</option>
+          <option value="">
+            Select category
+          </option>
 
           {categories.map((category) => (
-            <option key={category.id} value={category.id}>
+            <option
+              key={category.id}
+              value={category.id}
+            >
               {category.name}
-            </option>
-          ))}
-        </select>
-
-        <select
-          name="supplier_id"
-          value={form.supplier_id}
-          onChange={handleChange}
-        >
-          <option value="">Select supplier</option>
-
-          {suppliers.map((supplier) => (
-            <option key={supplier.id} value={supplier.id}>
-              {supplier.name}
             </option>
           ))}
         </select>
@@ -601,7 +582,10 @@ function Products() {
         />
 
         <div className="form-actions">
-          <button type="submit" disabled={saving}>
+          <button
+            type="submit"
+            disabled={saving}
+          >
             {saving
               ? 'Saving...'
               : editingProductId === null
@@ -610,14 +594,19 @@ function Products() {
           </button>
 
           {editingProductId !== null && (
-            <button type="button" onClick={resetForm}>
+            <button
+              type="button"
+              onClick={resetForm}
+            >
               Cancel
             </button>
           )}
         </div>
 
         {message && <p>{message}</p>}
-        {errorMessage && <p>{errorMessage}</p>}
+        {errorMessage && (
+          <p>{errorMessage}</p>
+        )}
       </form>
 
       <section className="product-list">
@@ -626,20 +615,29 @@ function Products() {
         <div className="product-filters">
           <input
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) =>
+              setSearch(event.target.value)
+            }
             placeholder="Search SKU, product, model or size"
           />
 
           <select
             value={categoryFilter}
             onChange={(event) =>
-              setCategoryFilter(event.target.value)
+              setCategoryFilter(
+                event.target.value,
+              )
             }
           >
-            <option value="">All categories</option>
+            <option value="">
+              All categories
+            </option>
 
             {categories.map((category) => (
-              <option key={category.id} value={category.id}>
+              <option
+                key={category.id}
+                value={category.id}
+              >
                 {category.name}
               </option>
             ))}
@@ -655,103 +653,129 @@ function Products() {
           <p>No matching products.</p>
         ) : (
           <div className="product-grid">
-            {filteredProducts.map((product) => (
-              <article
-                key={product.id}
-                className="product-card"
-              >
-                <h3>
-                  {product.sku} — {product.name}
-                </h3>
+            {filteredProducts.map(
+              (product) => (
+                <article
+                  key={product.id}
+                  className="product-card"
+                >
+                  <h3>
+                    {product.sku} —{' '}
+                    {product.name}
+                  </h3>
 
-                <p>
-                  <strong>Category:</strong>{' '}
-                  {getCategoryName(product.category_id)}
-                </p>
-
-                <p>
-                  <strong>Supplier:</strong>{' '}
-                  {getSupplierName(product.supplier_id)}
-                </p>
-
-                {product.size && (
                   <p>
-                    <strong>Size:</strong> {product.size}
+                    <strong>
+                      Category:
+                    </strong>{' '}
+                    {getCategoryName(
+                      product.category_id,
+                    )}
                   </p>
-                )}
 
-                {product.model && (
+                  {product.size && (
+                    <p>
+                      <strong>Size:</strong>{' '}
+                      {product.size}
+                    </p>
+                  )}
+
+                  {product.model && (
+                    <p>
+                      <strong>Model:</strong>{' '}
+                      {product.model}
+                    </p>
+                  )}
+
+                  {product.box_type && (
+                    <p>
+                      <strong>Box:</strong>{' '}
+                      {product.box_type}
+                    </p>
+                  )}
+
+                  {product.thickness && (
+                    <p>
+                      <strong>
+                        Thickness:
+                      </strong>{' '}
+                      {product.thickness}
+                    </p>
+                  )}
+
+                  {product.seating_capacity !==
+                    null && (
+                    <p>
+                      <strong>
+                        Seating:
+                      </strong>{' '}
+                      {
+                        product.seating_capacity
+                      }
+                    </p>
+                  )}
+
+                  {product.specification && (
+                    <p>
+                      <strong>
+                        Specification:
+                      </strong>{' '}
+                      {
+                        product.specification
+                      }
+                    </p>
+                  )}
+
                   <p>
-                    <strong>Model:</strong> {product.model}
+                    <strong>
+                      Purchase:
+                    </strong>{' '}
+                    {product.default_purchase_cost !==
+                    null
+                      ? 'INR ' +
+                        product.default_purchase_cost.toLocaleString(
+                          'en-IN',
+                        )
+                      : '-'}
                   </p>
-                )}
 
-                {product.box_type && (
                   <p>
-                    <strong>Box:</strong> {product.box_type}
+                    <strong>
+                      Selling:
+                    </strong>{' '}
+                    {product.default_selling_price !==
+                    null
+                      ? 'INR ' +
+                        product.default_selling_price.toLocaleString(
+                          'en-IN',
+                        )
+                      : '-'}
                   </p>
-                )}
 
-                {product.thickness && (
-                  <p>
-                    <strong>Thickness:</strong>{' '}
-                    {product.thickness}
-                  </p>
-                )}
+                  <div className="card-actions">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        startEdit(product)
+                      }
+                    >
+                      Edit
+                    </button>
 
-                {product.seating_capacity !== null && (
-                  <p>
-                    <strong>Seating:</strong>{' '}
-                    {product.seating_capacity}
-                  </p>
-                )}
-
-                {product.specification && (
-                  <p>
-                    <strong>Specification:</strong>{' '}
-                    {product.specification}
-                  </p>
-                )}
-
-                <p>
-                  <strong>Purchase:</strong>{' '}
-                  {product.default_purchase_cost !== null
-                    ? 'INR ' +
-                      product.default_purchase_cost.toLocaleString(
-                        'en-IN',
-                      )
-                    : '-'}
-                </p>
-
-                <p>
-                  <strong>Selling:</strong>{' '}
-                  {product.default_selling_price !== null
-                    ? 'INR ' +
-                      product.default_selling_price.toLocaleString(
-                        'en-IN',
-                      )
-                    : '-'}
-                </p>
-
-                <div className="card-actions">
-                  <button
-                    type="button"
-                    onClick={() => startEdit(product)}
-                  >
-                    Edit
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void deactivateProduct(product)
-                    }
-                  >
-                    Deactivate
-                  </button>
-                </div>
-              </article>
-            ))}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void deactivateProduct(
+                          product,
+                        )
+                      }
+                    >
+                      Deactivate
+                    </button>
+                  </div>
+                </article>
+              ),
+            )}
           </div>
         )}
       </section>

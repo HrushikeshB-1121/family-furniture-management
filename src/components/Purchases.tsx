@@ -64,17 +64,26 @@ function Purchases() {
       ]);
 
     if (productsResult.error) {
-      console.error('Failed to load products:', productsResult.error);
+      console.error(
+        'Failed to load products:',
+        productsResult.error,
+      );
       setErrorMessage('Failed to load products.');
     }
 
     if (suppliersResult.error) {
-      console.error('Failed to load suppliers:', suppliersResult.error);
+      console.error(
+        'Failed to load suppliers:',
+        suppliersResult.error,
+      );
       setErrorMessage('Failed to load suppliers.');
     }
 
     if (locationsResult.error) {
-      console.error('Failed to load locations:', locationsResult.error);
+      console.error(
+        'Failed to load locations:',
+        locationsResult.error,
+      );
       setErrorMessage('Failed to load locations.');
     }
 
@@ -94,7 +103,9 @@ function Purchases() {
     setNotes('');
   }
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
 
     setMessage('');
@@ -109,89 +120,48 @@ function Purchases() {
 
     const receivedQuantity = Number(quantity);
 
-    if (!Number.isFinite(receivedQuantity) || receivedQuantity <= 0) {
-      setErrorMessage('Quantity must be greater than 0.');
+    if (
+      !Number.isFinite(receivedQuantity) ||
+      receivedQuantity <= 0
+    ) {
+      setErrorMessage(
+        'Quantity must be greater than 0.',
+      );
       return;
     }
 
     setSaving(true);
 
     try {
-      /*
-       * Step 1:
-       * Create a pending purchase record.
-       *
-       * No purchase cost is entered by staff.
-       */
-      const { data: purchase, error: purchaseError } = await supabase
-        .from('purchases')
-        .insert({
-          supplier_id: Number(supplierId),
-          location_id: Number(locationId),
-          status: 'PENDING',
-          invoice_number: reference.trim() || null,
-          notes: notes.trim() || null,
-          total_amount: 0,
-        })
-        .select('id')
-        .single();
+      const { data, error } = await supabase.rpc(
+        'receive_stock',
+        {
+          p_supplier_id: Number(supplierId),
+          p_location_id: Number(locationId),
+          p_product_id: Number(productId),
+          p_quantity: receivedQuantity,
+          p_invoice_number:
+            reference.trim() || null,
+          p_notes: notes.trim() || null,
+        },
+      );
 
-      if (purchaseError || !purchase) {
-        throw (
-          purchaseError ??
-          new Error('Unable to create pending stock receipt.')
-        );
+      if (error) {
+        throw error;
       }
 
-      /*
-       * Step 2:
-       * Record the product received.
-       *
-       * Cost remains NULL until an admin confirms it.
-       */
-      const { error: itemError } = await supabase
-        .from('purchase_items')
-        .insert({
-            purchase_id: purchase.id,
-            product_id: Number(productId),
-            quantity: receivedQuantity,
-        });
-
-      if (itemError) {
-        throw itemError;
-      }
-
-      /*
-       * Step 3:
-       * Update stock immediately.
-       *
-       * This is the important staff workflow:
-       * receiving stock does NOT wait for admin confirmation.
-       */
-      const { error: stockError } = await supabase
-        .from('stock_transactions')
-        .insert({
-          product_id: Number(productId),
-          location_id: Number(locationId),
-          transaction_type: 'PURCHASE',
-          quantity: receivedQuantity,
-          transaction_date: new Date().toISOString(),
-          reference_type: 'PURCHASE',
-          reference_id: purchase.id,
-          notes: `Stock received - pending purchase #${purchase.id}`,
-        });
-
-      if (stockError) {
-        throw stockError;
-      }
+      const purchaseId = Number(data);
 
       setMessage(
-        `Stock received successfully. ${receivedQuantity} unit(s) added to stock. Purchase #${purchase.id} is pending admin confirmation.`,
+        `Stock received successfully. ${receivedQuantity} unit(s) added to stock. Purchase #${purchaseId} is pending admin confirmation.`,
       );
 
       resetForm();
     } catch (error) {
-      console.error('Failed to receive stock:', error);
+      console.error(
+        'Failed to receive stock:',
+        error,
+      );
 
       setErrorMessage(
         error instanceof Error
@@ -212,22 +182,32 @@ function Purchases() {
       <h1>Receive Stock</h1>
 
       <p>
-        Enter the stock that has physically arrived. Purchase cost is
-        handled later by an admin.
+        Enter the stock that has physically arrived.
+        Purchase cost is handled later by an admin.
       </p>
 
       <form onSubmit={handleSubmit}>
         <div>
-          <label htmlFor="supplier">Supplier</label>
+          <label htmlFor="supplier">
+            Supplier
+          </label>
+
           <select
             id="supplier"
             value={supplierId}
-            onChange={(event) => setSupplierId(event.target.value)}
+            onChange={(event) =>
+              setSupplierId(event.target.value)
+            }
           >
-            <option value="">Select supplier</option>
+            <option value="">
+              Select supplier
+            </option>
 
             {suppliers.map((supplier) => (
-              <option key={supplier.id} value={supplier.id}>
+              <option
+                key={supplier.id}
+                value={supplier.id}
+              >
                 {supplier.name}
               </option>
             ))}
@@ -235,16 +215,26 @@ function Purchases() {
         </div>
 
         <div>
-          <label htmlFor="location">Location</label>
+          <label htmlFor="location">
+            Location
+          </label>
+
           <select
             id="location"
             value={locationId}
-            onChange={(event) => setLocationId(event.target.value)}
+            onChange={(event) =>
+              setLocationId(event.target.value)
+            }
           >
-            <option value="">Select location</option>
+            <option value="">
+              Select location
+            </option>
 
             {locations.map((location) => (
-              <option key={location.id} value={location.id}>
+              <option
+                key={location.id}
+                value={location.id}
+              >
                 {location.name}
               </option>
             ))}
@@ -252,16 +242,26 @@ function Purchases() {
         </div>
 
         <div>
-          <label htmlFor="product">Product</label>
+          <label htmlFor="product">
+            Product
+          </label>
+
           <select
             id="product"
             value={productId}
-            onChange={(event) => setProductId(event.target.value)}
+            onChange={(event) =>
+              setProductId(event.target.value)
+            }
           >
-            <option value="">Select product</option>
+            <option value="">
+              Select product
+            </option>
 
             {products.map((product) => (
-              <option key={product.id} value={product.id}>
+              <option
+                key={product.id}
+                value={product.id}
+              >
                 {product.sku} - {product.name}
               </option>
             ))}
@@ -269,14 +269,19 @@ function Purchases() {
         </div>
 
         <div>
-          <label htmlFor="quantity">Quantity</label>
+          <label htmlFor="quantity">
+            Quantity
+          </label>
+
           <input
             id="quantity"
             type="number"
             min="0.01"
             step="0.01"
             value={quantity}
-            onChange={(event) => setQuantity(event.target.value)}
+            onChange={(event) =>
+              setQuantity(event.target.value)
+            }
             placeholder="Enter quantity"
           />
         </div>
@@ -285,33 +290,45 @@ function Purchases() {
           <label htmlFor="reference">
             Invoice / Reference (optional)
           </label>
+
           <input
             id="reference"
             type="text"
             value={reference}
-            onChange={(event) => setReference(event.target.value)}
+            onChange={(event) =>
+              setReference(event.target.value)
+            }
             placeholder="Invoice number"
           />
         </div>
 
         <div>
-          <label htmlFor="notes">Notes (optional)</label>
+          <label htmlFor="notes">
+            Notes (optional)
+          </label>
+
           <textarea
             id="notes"
             value={notes}
-            onChange={(event) => setNotes(event.target.value)}
+            onChange={(event) =>
+              setNotes(event.target.value)
+            }
             placeholder="Any additional note"
             rows={3}
           />
         </div>
 
-        <button type="submit" disabled={saving}>
-          {saving ? 'Saving...' : 'Receive Stock'}
+        <button
+          type="submit"
+          disabled={saving}
+        >
+          {saving
+            ? 'Saving...'
+            : 'Receive Stock'}
         </button>
       </form>
 
       {message && <p>{message}</p>}
-
       {errorMessage && <p>{errorMessage}</p>}
     </main>
   );
