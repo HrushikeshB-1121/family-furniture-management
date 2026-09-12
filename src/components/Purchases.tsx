@@ -152,11 +152,9 @@ function Purchases() {
       const { error: itemError } = await supabase
         .from('purchase_items')
         .insert({
-          purchase_id: purchase.id,
-          product_id: Number(productId),
-          quantity: receivedQuantity,
-          unit_cost: null,
-          total_cost: null,
+            purchase_id: purchase.id,
+            product_id: Number(productId),
+            quantity: receivedQuantity,
         });
 
       if (itemError) {

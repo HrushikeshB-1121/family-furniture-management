@@ -17,8 +17,6 @@ type PurchaseItem = {
   purchase_id: number;
   product_id: number;
   quantity: number;
-  unit_cost: number | null;
-  total_cost: number | null;
   sku: string;
   product_name: string;
 };
@@ -36,12 +34,23 @@ const emptyForm: FormState = {
 };
 
 function PendingPurchases() {
-  const [purchases, setPurchases] = useState<PendingPurchase[]>([]);
-  const [items, setItems] = useState<Record<number, PurchaseItem[]>>({});
-  const [forms, setForms] = useState<Record<number, FormState>>({});
+  const [purchases, setPurchases] = useState<
+    PendingPurchase[]
+  >([]);
+
+  const [items, setItems] = useState<
+    Record<number, PurchaseItem[]>
+  >({});
+
+  const [forms, setForms] = useState<
+    Record<number, FormState>
+  >({});
 
   const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState<number | null>(null);
+  const [savingId, setSavingId] = useState<number | null>(
+    null,
+  );
+
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -70,27 +79,33 @@ function PendingPurchases() {
         )
       `)
       .eq('status', 'PENDING')
-      .order('purchase_date', { ascending: false });
+      .order('purchase_date', {
+        ascending: false,
+      });
 
     if (error) {
-      console.error('Failed to load pending purchases:', error);
+      console.error(
+        'Failed to load pending purchases:',
+        error,
+      );
+
       setErrorMessage(error.message);
       setLoading(false);
       return;
     }
 
-    const pendingPurchases: PendingPurchase[] = (data ?? []).map(
-      (purchase: any) => ({
-        id: purchase.id,
-        supplier_id: purchase.supplier_id,
-        location_id: purchase.location_id,
-        purchase_date: purchase.purchase_date,
-        invoice_number: purchase.invoice_number,
-        notes: purchase.notes,
-        supplier_name: purchase.suppliers?.name ?? '-',
-        location_name: purchase.locations?.name ?? '-',
-      }),
-    );
+    const pendingPurchases: PendingPurchase[] = (
+      data ?? []
+    ).map((purchase: any) => ({
+      id: purchase.id,
+      supplier_id: purchase.supplier_id,
+      location_id: purchase.location_id,
+      purchase_date: purchase.purchase_date,
+      invoice_number: purchase.invoice_number,
+      notes: purchase.notes,
+      supplier_name: purchase.suppliers?.name ?? '-',
+      location_name: purchase.locations?.name ?? '-',
+    }));
 
     setPurchases(pendingPurchases);
 
@@ -98,13 +113,18 @@ function PendingPurchases() {
       await loadPurchaseItems(pendingPurchases);
     } else {
       setItems({});
+      setForms({});
     }
 
     setLoading(false);
   }
 
-  async function loadPurchaseItems(pendingPurchases: PendingPurchase[]) {
-    const purchaseIds = pendingPurchases.map((purchase) => purchase.id);
+  async function loadPurchaseItems(
+    pendingPurchases: PendingPurchase[],
+  ) {
+    const purchaseIds = pendingPurchases.map(
+      (purchase) => purchase.id,
+    );
 
     const { data, error } = await supabase
       .from('purchase_items')
@@ -113,8 +133,6 @@ function PendingPurchases() {
         purchase_id,
         product_id,
         quantity,
-        unit_cost,
-        total_cost,
         products (
           sku,
           name
@@ -123,7 +141,11 @@ function PendingPurchases() {
       .in('purchase_id', purchaseIds);
 
     if (error) {
-      console.error('Failed to load purchase items:', error);
+      console.error(
+        'Failed to load purchase items:',
+        error,
+      );
+
       setErrorMessage(error.message);
       return;
     }
@@ -131,23 +153,15 @@ function PendingPurchases() {
     const grouped: Record<number, PurchaseItem[]> = {};
 
     for (const item of data ?? []) {
-      const purchaseItem = item as any;
+      const rawItem = item as any;
 
       const mappedItem: PurchaseItem = {
-        id: purchaseItem.id,
-        purchase_id: purchaseItem.purchase_id,
-        product_id: purchaseItem.product_id,
-        quantity: Number(purchaseItem.quantity),
-        unit_cost:
-          purchaseItem.unit_cost !== null
-            ? Number(purchaseItem.unit_cost)
-            : null,
-        total_cost:
-          purchaseItem.total_cost !== null
-            ? Number(purchaseItem.total_cost)
-            : null,
-        sku: purchaseItem.products?.sku ?? '-',
-        product_name: purchaseItem.products?.name ?? '-',
+        id: rawItem.id,
+        purchase_id: rawItem.purchase_id,
+        product_id: rawItem.product_id,
+        quantity: Number(rawItem.quantity),
+        sku: rawItem.products?.sku ?? '-',
+        product_name: rawItem.products?.name ?? '-',
       };
 
       if (!grouped[mappedItem.purchase_id]) {
@@ -159,7 +173,10 @@ function PendingPurchases() {
 
     setItems(grouped);
 
-    const initialForms: Record<number, FormState> = {};
+    const initialForms: Record<
+      number,
+      FormState
+    > = {};
 
     for (const purchase of pendingPurchases) {
       initialForms[purchase.id] = {
@@ -189,12 +206,15 @@ function PendingPurchases() {
     unitCost: number,
   ) {
     return purchaseItems.reduce(
-      (total, item) => total + item.quantity * unitCost,
+      (total, item) =>
+        total + item.quantity * unitCost,
       0,
     );
   }
 
-  async function confirmPurchase(purchase: PendingPurchase) {
+  async function confirmPurchase(
+    purchase: PendingPurchase,
+  ) {
     setMessage('');
     setErrorMessage('');
 
@@ -212,28 +232,38 @@ function PendingPurchases() {
     const paidNow = Number(form.paidNow);
 
     if (!Number.isFinite(unitCost) || unitCost < 0) {
-      setErrorMessage('Unit cost must be 0 or greater.');
-      return;
-    }
-
-    if (!Number.isFinite(paidNow) || paidNow < 0) {
-      setErrorMessage('Paid Now must be 0 or greater.');
-      return;
-    }
-
-    const totalCost = calculateTotalCost(purchaseItems, unitCost);
-
-    if (paidNow > totalCost) {
       setErrorMessage(
-        `Paid Now cannot be greater than the purchase total of INR ${totalCost.toLocaleString(
-          'en-IN',
-        )}.`,
+        'Unit cost must be 0 or greater.',
       );
       return;
     }
 
-    if (paidNow > 0 && !form.paymentMethod.trim()) {
-      setErrorMessage('Select a payment method when Paid Now is greater than 0.');
+    if (!Number.isFinite(paidNow) || paidNow < 0) {
+      setErrorMessage(
+        'Paid Now must be 0 or greater.',
+      );
+      return;
+    }
+
+    const totalCost = calculateTotalCost(
+      purchaseItems,
+      unitCost,
+    );
+
+    if (paidNow > totalCost) {
+      setErrorMessage(
+        'Paid Now cannot be greater than the purchase total.',
+      );
+      return;
+    }
+
+    if (
+      paidNow > 0 &&
+      !form.paymentMethod.trim()
+    ) {
+      setErrorMessage(
+        'Select a payment method when Paid Now is greater than 0.',
+      );
       return;
     }
 
@@ -242,46 +272,63 @@ function PendingPurchases() {
     setSavingId(purchase.id);
 
     try {
-      // Update every item with the confirmed cost.
+      /*
+       * Store the actual cost in the Admin-only
+       * purchase_item_costs table.
+       */
       for (const item of purchaseItems) {
-        const itemTotal = item.quantity * unitCost;
+        const itemTotal =
+          item.quantity * unitCost;
 
-        const { error: itemUpdateError } = await supabase
-          .from('purchase_items')
-          .update({
-            unit_cost: unitCost,
-            total_cost: itemTotal,
-          })
-          .eq('id', item.id);
+        const { error: costError } =
+          await supabase
+            .from('purchase_item_costs')
+            .upsert({
+              purchase_item_id: item.id,
+              unit_cost: unitCost,
+              total_cost: itemTotal,
+              updated_at:
+                new Date().toISOString(),
+            });
 
-        if (itemUpdateError) {
-          throw itemUpdateError;
+        if (costError) {
+          throw costError;
         }
       }
 
-      // Update the purchase itself.
-      const { error: purchaseUpdateError } = await supabase
-        .from('purchases')
-        .update({
-          status: 'CONFIRMED',
-          total_amount: totalCost,
-        })
-        .eq('id', purchase.id);
+      /*
+       * Mark the purchase as financially confirmed.
+       * This does NOT touch stock.
+       */
+      const { error: purchaseError } =
+        await supabase
+          .from('purchases')
+          .update({
+            status: 'CONFIRMED',
+            total_amount: totalCost,
+          })
+          .eq('id', purchase.id);
 
-      if (purchaseUpdateError) {
-        throw purchaseUpdateError;
+      if (purchaseError) {
+        throw purchaseError;
       }
 
-      // Add purchase amount to supplier payable.
+      /*
+       * Add the purchase amount to supplier payable.
+       */
       if (purchase.supplier_id !== null) {
-        const { error: supplierPurchaseError } = await supabase
+        const {
+          error: supplierPurchaseError,
+        } = await supabase
           .from('supplier_transactions')
           .insert({
-            supplier_id: purchase.supplier_id,
+            supplier_id:
+              purchase.supplier_id,
             transaction_type: 'PURCHASE',
             amount: totalCost,
             purchase_id: purchase.id,
-            transaction_date: new Date().toISOString(),
+            transaction_date:
+              new Date().toISOString(),
             notes: `Purchase #${purchase.id}`,
           });
 
@@ -289,17 +336,24 @@ function PendingPurchases() {
           throw supplierPurchaseError;
         }
 
-        // Record money paid to supplier, if any.
+        /*
+         * Record payment made at confirmation time.
+         */
         if (paidNow > 0) {
-          const { error: supplierPaymentError } = await supabase
+          const {
+            error: supplierPaymentError,
+          } = await supabase
             .from('supplier_transactions')
             .insert({
-              supplier_id: purchase.supplier_id,
+              supplier_id:
+                purchase.supplier_id,
               transaction_type: 'PAYMENT',
               amount: paidNow,
               purchase_id: purchase.id,
-              transaction_date: new Date().toISOString(),
-              payment_method: form.paymentMethod.trim(),
+              transaction_date:
+                new Date().toISOString(),
+              payment_method:
+                form.paymentMethod.trim(),
               notes: `Payment against purchase #${purchase.id}`,
             });
 
@@ -314,14 +368,17 @@ function PendingPurchases() {
           'en-IN',
         )}. Paid Now: INR ${paidNow.toLocaleString(
           'en-IN',
-        )}. Supplier due: INR ${supplierDue.toLocaleString(
+        )}. Supplier Due: INR ${supplierDue.toLocaleString(
           'en-IN',
         )}.`,
       );
 
       await loadPendingPurchases();
     } catch (error) {
-      console.error('Failed to confirm purchase:', error);
+      console.error(
+        'Failed to confirm purchase:',
+        error,
+      );
 
       setErrorMessage(
         error instanceof Error
@@ -334,7 +391,9 @@ function PendingPurchases() {
   }
 
   if (loading) {
-    return <p>Loading pending purchases...</p>;
+    return (
+      <p>Loading pending purchases...</p>
+    );
   }
 
   return (
@@ -342,8 +401,9 @@ function PendingPurchases() {
       <h1>Pending Purchases</h1>
 
       <p>
-        These are stock receipts waiting for the actual purchase cost to
-        be confirmed by an admin.
+        These are stock receipts waiting for
+        the actual purchase cost to be confirmed
+        by an admin.
       </p>
 
       {message && <p>{message}</p>}
@@ -354,18 +414,30 @@ function PendingPurchases() {
       ) : (
         <section>
           {purchases.map((purchase) => {
-            const purchaseItems = items[purchase.id] ?? [];
-            const form = forms[purchase.id] ?? emptyForm;
+            const purchaseItems =
+              items[purchase.id] ?? [];
 
-            const unitCost = Number(form.unitCost);
+            const form =
+              forms[purchase.id] ?? emptyForm;
+
+            const unitCost =
+              Number(form.unitCost);
+
             const totalCost =
-              Number.isFinite(unitCost) && unitCost >= 0
-                ? calculateTotalCost(purchaseItems, unitCost)
+              Number.isFinite(unitCost) &&
+              unitCost >= 0
+                ? calculateTotalCost(
+                    purchaseItems,
+                    unitCost,
+                  )
                 : 0;
 
-            const paidNow = Number(form.paidNow);
+            const paidNow =
+              Number(form.paidNow);
+
             const supplierDue =
-              Number.isFinite(paidNow) && paidNow >= 0
+              Number.isFinite(paidNow) &&
+              paidNow >= 0
                 ? totalCost - paidNow
                 : totalCost;
 
@@ -373,26 +445,32 @@ function PendingPurchases() {
               <article key={purchase.id}>
                 <hr />
 
-                <h2>Purchase #{purchase.id}</h2>
+                <h2>
+                  Purchase #{purchase.id}
+                </h2>
 
                 <p>
-                  <strong>Supplier:</strong> {purchase.supplier_name}
+                  <strong>Supplier:</strong>{' '}
+                  {purchase.supplier_name}
                 </p>
 
                 <p>
-                  <strong>Location:</strong> {purchase.location_name}
+                  <strong>Location:</strong>{' '}
+                  {purchase.location_name}
                 </p>
 
                 <p>
                   <strong>Date:</strong>{' '}
-                  {new Date(purchase.purchase_date).toLocaleString(
-                    'en-IN',
-                  )}
+                  {new Date(
+                    purchase.purchase_date,
+                  ).toLocaleString('en-IN')}
                 </p>
 
                 {purchase.invoice_number && (
                   <p>
-                    <strong>Invoice / Reference:</strong>{' '}
+                    <strong>
+                      Invoice / Reference:
+                    </strong>{' '}
                     {purchase.invoice_number}
                   </p>
                 )}
@@ -402,17 +480,24 @@ function PendingPurchases() {
                 {purchaseItems.map((item) => (
                   <div key={item.id}>
                     <p>
-                      {item.sku} - {item.product_name}
+                      {item.sku} -{' '}
+                      {item.product_name}
                     </p>
 
-                    <p>Quantity: {item.quantity}</p>
+                    <p>
+                      Quantity: {item.quantity}
+                    </p>
                   </div>
                 ))}
 
-                <h3>Admin Confirmation</h3>
+                <h3>
+                  Admin Confirmation
+                </h3>
 
                 <div>
-                  <label htmlFor={`cost-${purchase.id}`}>
+                  <label
+                    htmlFor={`cost-${purchase.id}`}
+                  >
                     Unit Purchase Cost
                   </label>
 
@@ -434,7 +519,9 @@ function PendingPurchases() {
                 </div>
 
                 <div>
-                  <label htmlFor={`paid-${purchase.id}`}>
+                  <label
+                    htmlFor={`paid-${purchase.id}`}
+                  >
                     Paid Now
                   </label>
 
@@ -456,7 +543,9 @@ function PendingPurchases() {
                 </div>
 
                 <div>
-                  <label htmlFor={`method-${purchase.id}`}>
+                  <label
+                    htmlFor={`method-${purchase.id}`}
+                  >
                     Payment Method
                   </label>
 
@@ -471,31 +560,58 @@ function PendingPurchases() {
                       )
                     }
                   >
-                    <option value="">Select payment method</option>
-                    <option value="CASH">Cash</option>
-                    <option value="UPI">UPI</option>
+                    <option value="">
+                      Select payment method
+                    </option>
+                    <option value="CASH">
+                      Cash
+                    </option>
+                    <option value="UPI">
+                      UPI
+                    </option>
                     <option value="BANK_TRANSFER">
                       Bank Transfer
                     </option>
-                    <option value="CARD">Card</option>
-                    <option value="OTHER">Other</option>
+                    <option value="CARD">
+                      Card
+                    </option>
+                    <option value="OTHER">
+                      Other
+                    </option>
                   </select>
                 </div>
 
                 <p>
-                  <strong>Total Cost:</strong> INR{' '}
-                  {totalCost.toLocaleString('en-IN')}
+                  <strong>
+                    Total Cost:
+                  </strong>{' '}
+                  INR{' '}
+                  {totalCost.toLocaleString(
+                    'en-IN',
+                  )}
                 </p>
 
                 <p>
-                  <strong>Supplier Due:</strong> INR{' '}
-                  {Math.max(supplierDue, 0).toLocaleString('en-IN')}
+                  <strong>
+                    Supplier Due:
+                  </strong>{' '}
+                  INR{' '}
+                  {Math.max(
+                    supplierDue,
+                    0,
+                  ).toLocaleString('en-IN')}
                 </p>
 
                 <button
                   type="button"
-                  disabled={savingId === purchase.id}
-                  onClick={() => void confirmPurchase(purchase)}
+                  disabled={
+                    savingId === purchase.id
+                  }
+                  onClick={() =>
+                    void confirmPurchase(
+                      purchase,
+                    )
+                  }
                 >
                   {savingId === purchase.id
                     ? 'Confirming...'

@@ -365,24 +365,6 @@ function Sales() {
           throw customerSaleError;
         }
 
-        if (payment > 0) {
-          const { error: customerPaymentError } =
-            await supabase
-              .from('customer_transactions')
-              .insert({
-                customer_id: selectedCustomer.id,
-                transaction_type: 'PAYMENT',
-                amount: payment,
-                sale_id: sale.id,
-                transaction_date: new Date().toISOString(),
-                payment_method: paymentMethod,
-                notes: `Payment against sale #${sale.id}`,
-              });
-
-          if (customerPaymentError) {
-            throw customerPaymentError;
-          }
-        }
       }
 
       const customerDue =

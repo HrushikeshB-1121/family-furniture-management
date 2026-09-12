@@ -17,7 +17,6 @@ type Product = {
   name: string;
   category_id: number;
   supplier_id: number | null;
-  default_purchase_cost: number | null;
   default_selling_price: number | null;
   unit: string;
   size: string | null;
@@ -26,6 +25,7 @@ type Product = {
   thickness: string | null;
   seating_capacity: number | null;
   specification: string | null;
+  default_purchase_cost: number | null;
 };
 
 type ProductForm = {
@@ -65,10 +65,13 @@ function Products() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
 
-  const [form, setForm] = useState<ProductForm>(emptyForm);
-  const [editingProductId, setEditingProductId] = useState<number | null>(
-    null,
-  );
+  const [form, setForm] = useState<ProductForm>({
+    ...emptyForm,
+  });
+
+  const [editingProductId, setEditingProductId] = useState<
+    number | null
+  >(null);
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -76,6 +79,7 @@ function Products() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
     void loadData();
@@ -83,58 +87,100 @@ function Products() {
 
   async function loadData() {
     setLoading(true);
+    setErrorMessage('');
 
-    const [categoriesResult, suppliersResult, productsResult] =
-      await Promise.all([
-        supabase
-          .from('categories')
-          .select('id, name')
-          .eq('is_active', true)
-          .order('name'),
+    const [
+      categoriesResult,
+      suppliersResult,
+      productsResult,
+      costsResult,
+    ] = await Promise.all([
+      supabase
+        .from('categories')
+        .select('id, name')
+        .eq('is_active', true)
+        .order('name'),
 
-        supabase
-          .from('suppliers')
-          .select('id, name')
-          .eq('is_active', true)
-          .order('name'),
+      supabase
+        .from('suppliers')
+        .select('id, name')
+        .eq('is_active', true)
+        .order('name'),
 
-        supabase
-          .from('products')
-          .select(`
-            id,
-            sku,
-            name,
-            category_id,
-            supplier_id,
-            default_purchase_cost,
-            default_selling_price,
-            unit,
-            size,
-            model,
-            box_type,
-            thickness,
-            seating_capacity,
-            specification
-          `)
-          .eq('is_active', true)
-          .order('name'),
-      ]);
+      supabase
+        .from('products')
+        .select(`
+          id,
+          sku,
+          name,
+          category_id,
+          supplier_id,
+          default_selling_price,
+          unit,
+          size,
+          model,
+          box_type,
+          thickness,
+          seating_capacity,
+          specification
+        `)
+        .eq('is_active', true)
+        .order('name'),
+
+      supabase
+        .from('product_costs')
+        .select('product_id, default_purchase_cost'),
+    ]);
 
     if (categoriesResult.error) {
-      console.error('Failed to load categories:', categoriesResult.error);
+      console.error(
+        'Failed to load categories:',
+        categoriesResult.error,
+      );
     }
 
     if (suppliersResult.error) {
-      console.error('Failed to load suppliers:', suppliersResult.error);
+      console.error(
+        'Failed to load suppliers:',
+        suppliersResult.error,
+      );
     }
 
     if (productsResult.error) {
-      console.error('Failed to load products:', productsResult.error);
+      console.error(
+        'Failed to load products:',
+        productsResult.error,
+      );
     }
+
+    if (costsResult.error) {
+      console.error(
+        'Failed to load product costs:',
+        costsResult.error,
+      );
+    }
+
+    const costMap = new Map<number, number | null>();
+
+    for (const cost of costsResult.data ?? []) {
+      costMap.set(
+        cost.product_id,
+        cost.default_purchase_cost !== null
+          ? Number(cost.default_purchase_cost)
+          : null,
+      );
+    }
+
+    const loadedProducts: Product[] = (
+      productsResult.data ?? []
+    ).map((product) => ({
+      ...product,
+      default_purchase_cost: costMap.get(product.id) ?? null,
+    }));
 
     setCategories(categoriesResult.data ?? []);
     setSuppliers(suppliersResult.data ?? []);
-    setProducts(productsResult.data ?? []);
+    setProducts(loadedProducts);
 
     setLoading(false);
   }
@@ -156,14 +202,29 @@ function Products() {
     setForm({ ...emptyForm });
     setEditingProductId(null);
     setMessage('');
+    setErrorMessage('');
   }
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
-    setMessage('');
 
-    if (!form.sku.trim() || !form.name.trim() || !form.category_id) {
-      setMessage('SKU, product name and category are required.');
+    setMessage('');
+    setErrorMessage('');
+
+    if (!form.sku.trim()) {
+      setErrorMessage('SKU is required.');
+      return;
+    }
+
+    if (!form.name.trim()) {
+      setErrorMessage('Product name is required.');
+      return;
+    }
+
+    if (!form.category_id) {
+      setErrorMessage('Category is required.');
       return;
     }
 
@@ -171,7 +232,7 @@ function Products() {
       form.default_purchase_cost &&
       Number(form.default_purchase_cost) < 0
     ) {
-      setMessage('Purchase cost cannot be negative.');
+      setErrorMessage('Purchase cost cannot be negative.');
       return;
     }
 
@@ -179,69 +240,115 @@ function Products() {
       form.default_selling_price &&
       Number(form.default_selling_price) < 0
     ) {
-      setMessage('Selling price cannot be negative.');
+      setErrorMessage('Selling price cannot be negative.');
       return;
     }
 
-    if (form.seating_capacity && Number(form.seating_capacity) < 1) {
-      setMessage('Seating capacity must be at least 1.');
+    if (
+      form.seating_capacity &&
+      Number(form.seating_capacity) < 1
+    ) {
+      setErrorMessage('Seating capacity must be at least 1.');
       return;
     }
 
     setSaving(true);
 
-    const productData = {
-      sku: form.sku.trim(),
-      name: form.name.trim(),
-      category_id: Number(form.category_id),
-      supplier_id: form.supplier_id ? Number(form.supplier_id) : null,
-      default_purchase_cost: form.default_purchase_cost
+    try {
+      const productData = {
+        sku: form.sku.trim(),
+        name: form.name.trim(),
+        category_id: Number(form.category_id),
+        supplier_id: form.supplier_id
+          ? Number(form.supplier_id)
+          : null,
+        default_selling_price: form.default_selling_price
+          ? Number(form.default_selling_price)
+          : null,
+        unit: form.unit.trim() || 'piece',
+        size: form.size.trim() || null,
+        model: form.model.trim() || null,
+        box_type: form.box_type.trim() || null,
+        thickness: form.thickness.trim() || null,
+        seating_capacity: form.seating_capacity
+          ? Number(form.seating_capacity)
+          : null,
+        specification: form.specification.trim() || null,
+      };
+
+      let productId: number;
+
+      if (editingProductId === null) {
+        const { data, error } = await supabase
+          .from('products')
+          .insert(productData)
+          .select('id')
+          .single();
+
+        if (error || !data) {
+          throw error ?? new Error('Failed to create product.');
+        }
+
+        productId = data.id;
+      } else {
+        const { error } = await supabase
+          .from('products')
+          .update(productData)
+          .eq('id', editingProductId);
+
+        if (error) {
+          throw error;
+        }
+
+        productId = editingProductId;
+      }
+
+      const purchaseCost = form.default_purchase_cost
         ? Number(form.default_purchase_cost)
-        : null,
-      default_selling_price: form.default_selling_price
-        ? Number(form.default_selling_price)
-        : null,
-      unit: form.unit.trim() || 'piece',
-      size: form.size.trim() || null,
-      model: form.model.trim() || null,
-      box_type: form.box_type.trim() || null,
-      thickness: form.thickness.trim() || null,
-      seating_capacity: form.seating_capacity
-        ? Number(form.seating_capacity)
-        : null,
-      specification: form.specification.trim() || null,
-    };
+        : null;
 
-    let error = null;
+      if (purchaseCost === null) {
+        const { error: costDeleteError } = await supabase
+          .from('product_costs')
+          .delete()
+          .eq('product_id', productId);
 
-    if (editingProductId === null) {
-      const result = await supabase.from('products').insert(productData);
-      error = result.error;
-    } else {
-      const result = await supabase
-        .from('products')
-        .update(productData)
-        .eq('id', editingProductId);
+        if (costDeleteError) {
+          throw costDeleteError;
+        }
+      } else {
+        const { error: costError } = await supabase
+          .from('product_costs')
+          .upsert({
+            product_id: productId,
+            default_purchase_cost: purchaseCost,
+            updated_at: new Date().toISOString(),
+          });
 
-      error = result.error;
-    }
+        if (costError) {
+          throw costError;
+        }
+      }
 
-    setSaving(false);
+      setMessage(
+        editingProductId === null
+          ? 'Product added successfully.'
+          : 'Product updated successfully.',
+      );
 
-    if (error) {
+      resetForm();
+      await loadData();
+    } catch (error) {
       console.error('Failed to save product:', error);
-      setMessage(error.message);
-      return;
+
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Failed to save product.',
+      );
+    } finally {
+      setSaving(false);
     }
-
-    setMessage(
-      editingProductId === null
-        ? 'Product added successfully.'
-        : 'Product updated successfully.',
-    );
-
-    resetForm();
-    await loadData();
   }
 
   function startEdit(product: Product) {
@@ -252,7 +359,9 @@ function Products() {
       name: product.name,
       category_id: String(product.category_id),
       supplier_id:
-        product.supplier_id !== null ? String(product.supplier_id) : '',
+        product.supplier_id !== null
+          ? String(product.supplier_id)
+          : '',
       default_purchase_cost:
         product.default_purchase_cost !== null
           ? String(product.default_purchase_cost)
@@ -274,6 +383,7 @@ function Products() {
     });
 
     setMessage('');
+    setErrorMessage('');
 
     window.scrollTo({
       top: 0,
@@ -283,7 +393,11 @@ function Products() {
 
   async function deactivateProduct(product: Product) {
     const confirmed = window.confirm(
-      'Deactivate "' + product.name + '" (' + product.sku + ')?',
+      'Deactivate "' +
+        product.name +
+        '" (' +
+        product.sku +
+        ')?',
     );
 
     if (!confirmed) {
@@ -296,8 +410,12 @@ function Products() {
       .eq('id', product.id);
 
     if (error) {
-      console.error('Failed to deactivate product:', error);
-      setMessage(error.message);
+      console.error(
+        'Failed to deactivate product:',
+        error,
+      );
+
+      setErrorMessage(error.message);
       return;
     }
 
@@ -312,7 +430,9 @@ function Products() {
 
   function getCategoryName(categoryId: number) {
     return (
-      categories.find((category) => category.id === categoryId)?.name ?? '-'
+      categories.find(
+        (category) => category.id === categoryId,
+      )?.name ?? '-'
     );
   }
 
@@ -322,7 +442,9 @@ function Products() {
     }
 
     return (
-      suppliers.find((supplier) => supplier.id === supplierId)?.name ?? '-'
+      suppliers.find(
+        (supplier) => supplier.id === supplierId,
+      )?.name ?? '-'
     );
   }
 
@@ -334,8 +456,12 @@ function Products() {
         normalizedSearch === '' ||
         product.sku.toLowerCase().includes(normalizedSearch) ||
         product.name.toLowerCase().includes(normalizedSearch) ||
-        (product.model ?? '').toLowerCase().includes(normalizedSearch) ||
-        (product.size ?? '').toLowerCase().includes(normalizedSearch);
+        (product.model ?? '')
+          .toLowerCase()
+          .includes(normalizedSearch) ||
+        (product.size ?? '')
+          .toLowerCase()
+          .includes(normalizedSearch);
 
       const matchesCategory =
         categoryFilter === '' ||
@@ -355,7 +481,9 @@ function Products() {
 
       <form onSubmit={handleSubmit} className="product-form">
         <h2>
-          {editingProductId === null ? 'Add Product' : 'Edit Product'}
+          {editingProductId === null
+            ? 'Add Product'
+            : 'Edit Product'}
         </h2>
 
         <input
@@ -489,6 +617,7 @@ function Products() {
         </div>
 
         {message && <p>{message}</p>}
+        {errorMessage && <p>{errorMessage}</p>}
       </form>
 
       <section className="product-list">
@@ -503,7 +632,9 @@ function Products() {
 
           <select
             value={categoryFilter}
-            onChange={(event) => setCategoryFilter(event.target.value)}
+            onChange={(event) =>
+              setCategoryFilter(event.target.value)
+            }
           >
             <option value="">All categories</option>
 
@@ -516,7 +647,8 @@ function Products() {
         </div>
 
         <p>
-          Showing {filteredProducts.length} of {products.length} products
+          Showing {filteredProducts.length} of{' '}
+          {products.length} products
         </p>
 
         {filteredProducts.length === 0 ? (
@@ -524,7 +656,10 @@ function Products() {
         ) : (
           <div className="product-grid">
             {filteredProducts.map((product) => (
-              <article key={product.id} className="product-card">
+              <article
+                key={product.id}
+                className="product-card"
+              >
                 <h3>
                   {product.sku} — {product.name}
                 </h3>
@@ -559,19 +694,22 @@ function Products() {
 
                 {product.thickness && (
                   <p>
-                    <strong>Thickness:</strong> {product.thickness}
+                    <strong>Thickness:</strong>{' '}
+                    {product.thickness}
                   </p>
                 )}
 
                 {product.seating_capacity !== null && (
                   <p>
-                    <strong>Seating:</strong> {product.seating_capacity}
+                    <strong>Seating:</strong>{' '}
+                    {product.seating_capacity}
                   </p>
                 )}
 
                 {product.specification && (
                   <p>
-                    <strong>Specification:</strong> {product.specification}
+                    <strong>Specification:</strong>{' '}
+                    {product.specification}
                   </p>
                 )}
 
@@ -579,7 +717,9 @@ function Products() {
                   <strong>Purchase:</strong>{' '}
                   {product.default_purchase_cost !== null
                     ? 'INR ' +
-                        product.default_purchase_cost.toLocaleString('en-IN')
+                      product.default_purchase_cost.toLocaleString(
+                        'en-IN',
+                      )
                     : '-'}
                 </p>
 
@@ -587,18 +727,25 @@ function Products() {
                   <strong>Selling:</strong>{' '}
                   {product.default_selling_price !== null
                     ? 'INR ' +
-                        product.default_selling_price.toLocaleString('en-IN')
+                      product.default_selling_price.toLocaleString(
+                        'en-IN',
+                      )
                     : '-'}
                 </p>
 
                 <div className="card-actions">
-                  <button type="button" onClick={() => startEdit(product)}>
+                  <button
+                    type="button"
+                    onClick={() => startEdit(product)}
+                  >
                     Edit
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => deactivateProduct(product)}
+                    onClick={() =>
+                      void deactivateProduct(product)
+                    }
                   >
                     Deactivate
                   </button>

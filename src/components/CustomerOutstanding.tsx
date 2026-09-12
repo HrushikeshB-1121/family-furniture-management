@@ -17,13 +17,22 @@ type CustomerTransaction = {
     | 'PAYMENT'
     | 'ADJUSTMENT';
   amount: number;
+  sale_id: number | null;
   transaction_date: string;
 };
 
+type Sale = {
+  id: number;
+  customer_id: number | null;
+  total_amount: number;
+  paid_now: number;
+};
+
 type CustomerBalance = Customer & {
-  totalSales: number;
-  totalPaid: number;
   openingBalance: number;
+  totalSales: number;
+  paidAtSale: number;
+  totalLaterPaid: number;
   adjustments: number;
   outstanding: number;
 };
@@ -33,6 +42,7 @@ function CustomerOutstanding() {
   const [transactions, setTransactions] = useState<
     CustomerTransaction[]
   >([]);
+  const [sales, setSales] = useState<Sale[]>([]);
 
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -46,40 +56,79 @@ function CustomerOutstanding() {
     setLoading(true);
     setErrorMessage('');
 
-    const [customersResult, transactionsResult] =
-      await Promise.all([
-        supabase
-          .from('customers')
-          .select(
-            'id, name, contact_person, phone, customer_type',
-          )
-          .eq('is_active', true)
-          .order('name'),
+    const [
+      customersResult,
+      transactionsResult,
+      salesResult,
+    ] = await Promise.all([
+      supabase
+        .from('customers')
+        .select(
+          'id, name, contact_person, phone, customer_type',
+        )
+        .eq('is_active', true)
+        .order('name'),
 
-        supabase
-          .from('customer_transactions')
-          .select(
-            'customer_id, transaction_type, amount, transaction_date',
-          )
-          .order('transaction_date'),
-      ]);
+      supabase
+        .from('customer_transactions')
+        .select(
+          'customer_id, transaction_type, amount, sale_id, transaction_date',
+        )
+        .order('transaction_date'),
+
+      supabase
+        .from('sales')
+        .select(
+          'id, customer_id, total_amount, paid_now',
+        ),
+    ]);
 
     if (customersResult.error) {
-      console.error(customersResult.error);
+      console.error(
+        'Failed to load customers:',
+        customersResult.error,
+      );
       setErrorMessage(customersResult.error.message);
     }
 
     if (transactionsResult.error) {
-      console.error(transactionsResult.error);
-      setErrorMessage(transactionsResult.error.message);
+      console.error(
+        'Failed to load customer transactions:',
+        transactionsResult.error,
+      );
+      setErrorMessage(
+        transactionsResult.error.message,
+      );
+    }
+
+    if (salesResult.error) {
+      console.error(
+        'Failed to load sales:',
+        salesResult.error,
+      );
+      setErrorMessage(salesResult.error.message);
     }
 
     setCustomers(customersResult.data ?? []);
 
     setTransactions(
-      (transactionsResult.data ?? []).map((transaction) => ({
-        ...transaction,
-        amount: Number(transaction.amount),
+      (transactionsResult.data ?? []).map(
+        (transaction) => ({
+          ...transaction,
+          amount: Number(transaction.amount),
+          sale_id:
+            transaction.sale_id !== null
+              ? Number(transaction.sale_id)
+              : null,
+        }),
+      ),
+    );
+
+    setSales(
+      (salesResult.data ?? []).map((sale) => ({
+        ...sale,
+        total_amount: Number(sale.total_amount),
+        paid_now: Number(sale.paid_now),
       })),
     );
 
@@ -89,60 +138,91 @@ function CustomerOutstanding() {
   const balances = useMemo<CustomerBalance[]>(() => {
     return customers
       .map((customer) => {
-        const customerTransactions = transactions.filter(
-          (transaction) =>
-            transaction.customer_id === customer.id,
+        const customerTransactions =
+          transactions.filter(
+            (transaction) =>
+              transaction.customer_id === customer.id,
+          );
+
+        const customerSales = sales.filter(
+          (sale) =>
+            sale.customer_id === customer.id,
         );
 
-        const totalSales = customerTransactions
-          .filter(
-            (transaction) =>
-              transaction.transaction_type === 'SALE',
-          )
-          .reduce((sum, transaction) => sum + transaction.amount, 0);
+        const totalSales = customerSales.reduce(
+          (sum, sale) => sum + sale.total_amount,
+          0,
+        );
 
-        const totalPaid = customerTransactions
-          .filter(
-            (transaction) =>
-              transaction.transaction_type === 'PAYMENT',
-          )
-          .reduce((sum, transaction) => sum + transaction.amount, 0);
+        const paidAtSale = customerSales.reduce(
+          (sum, sale) => sum + sale.paid_now,
+          0,
+        );
 
-        const openingBalance = customerTransactions
-          .filter(
-            (transaction) =>
-              transaction.transaction_type ===
-              'OPENING_BALANCE',
-          )
-          .reduce((sum, transaction) => sum + transaction.amount, 0);
+        const totalLaterPaid =
+          customerTransactions
+            .filter(
+              (transaction) =>
+                transaction.transaction_type ===
+                'PAYMENT',
+            )
+            .reduce(
+              (sum, transaction) =>
+                sum + transaction.amount,
+              0,
+            );
 
-        const adjustments = customerTransactions
-          .filter(
-            (transaction) =>
-              transaction.transaction_type === 'ADJUSTMENT',
-          )
-          .reduce((sum, transaction) => sum + transaction.amount, 0);
+        const openingBalance =
+          customerTransactions
+            .filter(
+              (transaction) =>
+                transaction.transaction_type ===
+                'OPENING_BALANCE',
+            )
+            .reduce(
+              (sum, transaction) =>
+                sum + transaction.amount,
+              0,
+            );
+
+        const adjustments =
+          customerTransactions
+            .filter(
+              (transaction) =>
+                transaction.transaction_type ===
+                'ADJUSTMENT',
+            )
+            .reduce(
+              (sum, transaction) =>
+                sum + transaction.amount,
+              0,
+            );
 
         const outstanding =
           openingBalance +
           totalSales +
           adjustments -
-          totalPaid;
+          paidAtSale -
+          totalLaterPaid;
 
         return {
           ...customer,
-          totalSales,
-          totalPaid,
           openingBalance,
+          totalSales,
+          paidAtSale,
+          totalLaterPaid,
           adjustments,
           outstanding,
         };
       })
-      .filter((customer) => customer.outstanding !== 0);
-  }, [customers, transactions]);
+      .filter(
+        (customer) => customer.outstanding !== 0,
+      );
+  }, [customers, transactions, sales]);
 
   const filteredBalances = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
+    const normalizedSearch =
+      search.trim().toLowerCase();
 
     if (!normalizedSearch) {
       return balances;
@@ -150,19 +230,25 @@ function CustomerOutstanding() {
 
     return balances.filter((customer) => {
       return (
-        customer.name.toLowerCase().includes(normalizedSearch) ||
+        customer.name
+          .toLowerCase()
+          .includes(normalizedSearch) ||
         (customer.contact_person ?? '')
           .toLowerCase()
           .includes(normalizedSearch) ||
-        (customer.phone ?? '').includes(normalizedSearch)
+        (customer.phone ?? '').includes(
+          normalizedSearch,
+        )
       );
     });
   }, [balances, search]);
 
-  const totalOutstanding = filteredBalances.reduce(
-    (sum, customer) => sum + customer.outstanding,
-    0,
-  );
+  const totalOutstanding =
+    filteredBalances.reduce(
+      (sum, customer) =>
+        sum + customer.outstanding,
+      0,
+    );
 
   if (loading) {
     return <p>Loading customer balances...</p>;
@@ -174,14 +260,20 @@ function CustomerOutstanding() {
 
       <p>
         Total Outstanding: INR{' '}
-        {totalOutstanding.toLocaleString('en-IN')}
+        {totalOutstanding.toLocaleString(
+          'en-IN',
+        )}
       </p>
 
-      {errorMessage && <p>{errorMessage}</p>}
+      {errorMessage && (
+        <p>{errorMessage}</p>
+      )}
 
       <input
         value={search}
-        onChange={(event) => setSearch(event.target.value)}
+        onChange={(event) =>
+          setSearch(event.target.value)
+        }
         placeholder="Search customer, shop, owner or phone"
       />
 
@@ -195,7 +287,8 @@ function CustomerOutstanding() {
 
               <p>
                 <strong>Type:</strong>{' '}
-                {customer.customer_type === 'SHOP'
+                {customer.customer_type ===
+                'SHOP'
                   ? 'Shop'
                   : 'Individual'}
               </p>
@@ -209,23 +302,41 @@ function CustomerOutstanding() {
 
               {customer.phone && (
                 <p>
-                  <strong>Phone:</strong> {customer.phone}
+                  <strong>Phone:</strong>{' '}
+                  {customer.phone}
                 </p>
               )}
 
               <p>
-                <strong>Total Sales:</strong> INR{' '}
-                {customer.totalSales.toLocaleString('en-IN')}
+                <strong>Total Sales:</strong>{' '}
+                INR{' '}
+                {customer.totalSales.toLocaleString(
+                  'en-IN',
+                )}
               </p>
 
               <p>
-                <strong>Total Paid:</strong> INR{' '}
-                {customer.totalPaid.toLocaleString('en-IN')}
+                <strong>Paid at Sale:</strong>{' '}
+                INR{' '}
+                {customer.paidAtSale.toLocaleString(
+                  'en-IN',
+                )}
               </p>
 
               <p>
-                <strong>Outstanding:</strong> INR{' '}
-                {customer.outstanding.toLocaleString('en-IN')}
+                <strong>Later Payments:</strong>{' '}
+                INR{' '}
+                {customer.totalLaterPaid.toLocaleString(
+                  'en-IN',
+                )}
+              </p>
+
+              <p>
+                <strong>Outstanding:</strong>{' '}
+                INR{' '}
+                {customer.outstanding.toLocaleString(
+                  'en-IN',
+                )}
               </p>
             </article>
           ))}
