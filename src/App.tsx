@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
+
 import { supabase } from './lib/supabase';
 import Login from './components/Login';
+import AppShell from './components/AppShell';
 
 type Profile = {
   id: string;
@@ -22,9 +24,11 @@ function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, currentSession) => {
-      setSession(currentSession);
-    });
+    } = supabase.auth.onAuthStateChange(
+      (_event, currentSession) => {
+        setSession(currentSession);
+      },
+    );
 
     return () => {
       subscription.unsubscribe();
@@ -70,46 +74,32 @@ function App() {
     setProfileLoading(false);
   }
 
-  async function handleLogout() {
-    await supabase.auth.signOut();
-  }
-
   if (loading) {
     return <p>Checking login...</p>;
   }
 
   if (!session) {
-    return (
-      <Login
-        onLoginSuccess={() => {
-          // Supabase auth state listener updates the session.
-        }}
-      />
-    );
+    return <Login onLoginSuccess={() => undefined} />;
   }
 
   if (profileLoading) {
     return <p>Loading user profile...</p>;
   }
 
+  if (!profile) {
+    return (
+      <main>
+        <h1>Unable to load profile</h1>
+        <p>{errorMessage}</p>
+      </main>
+    );
+  }
+
   return (
-    <main>
-      <h1>Furniture Management System</h1>
-
-      <p>
-        Welcome, {profile?.display_name ?? session.user.email}
-      </p>
-
-      <p>
-        Role: <strong>{profile?.role ?? 'Unknown'}</strong>
-      </p>
-
-      {errorMessage && <p>{errorMessage}</p>}
-
-      <button type="button" onClick={() => void handleLogout()}>
-        Logout
-      </button>
-    </main>
+    <AppShell
+      profile={profile}
+      email={session.user.email}
+    />
   );
 }
 
