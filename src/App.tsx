@@ -1,7 +1,7 @@
-import Products from './components/Products';
+import Stock from './components/Stock';
 
 function App() {
-  return <Products />;
+  return <Stock />;
 }
 
 export default App;
