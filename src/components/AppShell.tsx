@@ -10,6 +10,7 @@ import Customers from './Customers';
 import CustomerOutstanding from './CustomerOutstanding';
 import SupplierOutstanding from './SupplierOutstanding';
 import Payments from './Payments';
+import StockTransfer from './StockTransfer';
 
 type UserRole = 'ADMIN' | 'STAFF';
 
@@ -33,7 +34,8 @@ type View =
   | 'PENDING_PURCHASES'
   | 'CUSTOMER_OUTSTANDING'
   | 'SUPPLIER_OUTSTANDING'
-  | 'PAYMENTS';
+  | 'PAYMENTS'
+  | 'STOCK_TRANSFER';
 
 type MenuItem = {
   id: View;
@@ -53,6 +55,10 @@ const menuItems: MenuItem[] = [
   {
     id: 'RECEIVE_STOCK',
     label: 'Receive Stock',
+  },
+  {
+    id: 'STOCK_TRANSFER',
+    label: 'Stock Transfer',
   },
   {
     id: 'CUSTOMERS',
@@ -130,6 +136,9 @@ function AppShell({ profile, email }: AppShellProps) {
 
       case 'PAYMENTS':
         return profile.role === 'ADMIN' ? <Payments /> : null;
+      
+      case 'STOCK_TRANSFER':
+        return <StockTransfer />;
 
       default:
         return <Stock />;
