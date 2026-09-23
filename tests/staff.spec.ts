@@ -1,5 +1,34 @@
 import { test, expect } from "@playwright/test";
-import { getE2ETestData } from "./e2eData";
+import {
+  getAdminClient,
+  getE2ETestData,
+} from "./e2eData";
+
+async function getStock(
+  productId: number,
+  locationId: number,
+) {
+  const client = await getAdminClient();
+
+  try {
+    const { data, error } = await client
+      .from("current_stock")
+      .select("quantity")
+      .eq("product_id", productId)
+      .eq("location_id", locationId)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(
+        `Failed to read stock: ${error.message}`,
+      );
+    }
+
+    return Number(data?.quantity ?? 0);
+  } finally {
+    await client.auth.signOut();
+  }
+}
 
 test.describe("Staff", () => {
   test("Staff can see staff navigation", async ({ page }) => {
@@ -494,5 +523,136 @@ test.describe("Staff", () => {
     } finally {
       await adminContext.close();
     }
+  });
+
+  test("Staff can transfer E2E stock between locations", async ({
+    page,
+  }) => {
+    const testData = await getE2ETestData();
+
+    const destinationLocationId = 1; // Main Shop
+
+    /*
+    * Step 1: Receive 1 unit so this test has
+    * its own stock to transfer.
+    */
+    await page.goto("/");
+
+    await page.getByRole("button", {
+      name: "Receive Stock",
+      exact: true,
+    }).click();
+
+    await expect(
+      page.getByRole("heading", {
+        name: "Receive Stock",
+        exact: true,
+      }),
+    ).toBeVisible();
+
+    await page.getByLabel("Supplier").selectOption(
+      String(testData.supplierId),
+    );
+
+    await page.getByLabel("Location").selectOption(
+      String(testData.locationId),
+    );
+
+    await page.getByLabel("Product").selectOption(
+      String(testData.productId),
+    );
+
+    await page.getByLabel("Quantity").fill("1");
+
+    await page
+      .locator("form")
+      .getByRole("button", {
+        name: "Receive Stock",
+        exact: true,
+      })
+      .click();
+
+    await expect(
+      page.getByText(/received successfully/i),
+    ).toBeVisible();
+
+    /*
+    * Step 2: Read stock after receiving.
+    */
+    const sourceBefore = await getStock(
+      testData.productId,
+      testData.locationId,
+    );
+
+    const destinationBefore = await getStock(
+      testData.productId,
+      destinationLocationId,
+    );
+
+    /*
+    * Step 3: Open Stock Transfer.
+    */
+    await page.getByRole("button", {
+      name: "Stock Transfer",
+      exact: true,
+    }).click();
+
+    await expect(
+      page.getByRole("heading", {
+        name: "Stock Transfer",
+        exact: true,
+      }),
+    ).toBeVisible();
+
+    /*
+    * Step 4: Select product and locations.
+    */
+    await page.getByLabel("Product").selectOption(
+      String(testData.productId),
+    );
+
+    await page.getByLabel("From Location").selectOption(
+      String(testData.locationId),
+    );
+
+    await page.getByLabel("To Location").selectOption(
+      String(destinationLocationId),
+    );
+
+    await page.getByLabel("Quantity").fill("1");
+
+    await page.getByLabel("Notes").fill(
+      "E2E stock transfer",
+    );
+
+    await page.getByRole("button", {
+      name: "Transfer Stock",
+      exact: true,
+    }).click();
+
+    /*
+    * Step 5: Verify UI success.
+    */
+    await expect(
+      page.getByText(/stock transferred successfully/i),
+    ).toBeVisible();
+
+    /*
+    * Step 6: Verify actual database stock movement.
+    */
+    const sourceAfter = await getStock(
+      testData.productId,
+      testData.locationId,
+    );
+
+    const destinationAfter = await getStock(
+      testData.productId,
+      destinationLocationId,
+    );
+
+    expect(sourceAfter).toBe(sourceBefore - 1);
+    expect(destinationAfter).toBe(
+      destinationBefore + 1,
+    );
   });
 });
