@@ -136,14 +136,11 @@ export default function PendingPurchases() {
 
     setConfirmingId(purchase.id);
 
-    const costEntries = purchase.purchase_items.map((item) => ({
-      purchase_item_id: item.id,
-      unit_cost: Number(costs[item.id]),
-    }));
+    const item = purchase.purchase_items[0];
 
     const { error } = await supabase.rpc("confirm_purchase", {
       p_purchase_id: purchase.id,
-      p_items: costEntries,
+      p_unit_cost: Number(costs[item.id]),
       p_paid_now: payment,
       p_payment_method:
         payment > 0 ? paymentMethods[purchase.id] ?? "CASH" : null,
