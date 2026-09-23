@@ -11,6 +11,7 @@ import CustomerOutstanding from './CustomerOutstanding';
 import SupplierOutstanding from './SupplierOutstanding';
 import Payments from './Payments';
 import StockTransfer from './StockTransfer';
+import StockAdjustment from './StockAdjustment';
 
 type UserRole = 'ADMIN' | 'STAFF';
 
@@ -35,7 +36,8 @@ type View =
   | 'CUSTOMER_OUTSTANDING'
   | 'SUPPLIER_OUTSTANDING'
   | 'PAYMENTS'
-  | 'STOCK_TRANSFER';
+  | 'STOCK_TRANSFER'
+  | 'STOCK_ADJUSTMENT';
 
 type MenuItem = {
   id: View;
@@ -60,6 +62,11 @@ const menuItems: MenuItem[] = [
     id: 'STOCK_TRANSFER',
     label: 'Stock Transfer',
   },
+  {
+  id: 'STOCK_ADJUSTMENT',
+  label: 'Stock Adjustment',
+  adminOnly: true,
+},
   {
     id: 'CUSTOMERS',
     label: 'Customers',
@@ -139,6 +146,11 @@ function AppShell({ profile, email }: AppShellProps) {
       
       case 'STOCK_TRANSFER':
         return <StockTransfer />;
+
+      case 'STOCK_ADJUSTMENT':
+        return profile.role === 'ADMIN'
+          ? <StockAdjustment />
+          : null;
 
       default:
         return <Stock />;

@@ -53,7 +53,6 @@ async function getSupplierOutstanding(
     /Outstanding:\s*INR\s*([\d,]+(?:\.\d+)?)/i,
   );
 
-  
   if (!match) {
     throw new Error(
       `Could not read outstanding for supplier "${supplierName}".`,
@@ -147,6 +146,45 @@ async function getPurchaseStatus(
   }
 }
 
+async function findAdjustmentByReason(
+  reason: string,
+) {
+  const client = await getAdminClient();
+
+  try {
+    const {
+      data,
+      error,
+    } = await client
+      .from("stock_adjustments")
+      .select(
+        "id, product_id, location_id, quantity, reason, notes",
+      )
+      .eq("reason", reason)
+      .order("id", {
+        ascending: false,
+      })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(
+        `Failed to find stock adjustment: ${error.message}`,
+      );
+    }
+
+    if (!data) {
+      throw new Error(
+        `No stock adjustment found for reason "${reason}".`,
+      );
+    }
+
+    return data;
+  } finally {
+    await client.auth.signOut();
+  }
+}
+
 test.describe("Admin", () => {
   test("Admin can see admin navigation", async ({
     page,
@@ -184,6 +222,13 @@ test.describe("Admin", () => {
     await expect(
       page.getByRole("button", {
         name: "Payments",
+        exact: true,
+      }),
+    ).toBeVisible();
+
+    await expect(
+      page.getByRole("button", {
+        name: "Stock Adjustment",
         exact: true,
       }),
     ).toBeVisible();
@@ -247,7 +292,6 @@ test.describe("Admin", () => {
     page,
   }) => {
     const testData = await getE2ETestData();
-
     const supplierName = "E2E Test Supplier";
 
     /*
@@ -278,7 +322,8 @@ test.describe("Admin", () => {
       }),
     ).toBeVisible();
 
-    const supplierSelect = page.getByLabel("Supplier");
+    const supplierSelect =
+      page.getByLabel("Supplier");
 
     await expect(
       supplierSelect,
@@ -288,7 +333,8 @@ test.describe("Admin", () => {
       String(testData.supplierId),
     );
 
-    const locationSelect = page.getByLabel("Location");
+    const locationSelect =
+      page.getByLabel("Location");
 
     await expect(
       locationSelect,
@@ -298,7 +344,8 @@ test.describe("Admin", () => {
       String(testData.locationId),
     );
 
-    const productSelect = page.getByLabel("Product");
+    const productSelect =
+      page.getByLabel("Product");
 
     await expect(
       productSelect,
@@ -350,9 +397,6 @@ test.describe("Admin", () => {
       }),
     ).toBeVisible();
 
-    /*
-     * Locate the exact purchase by ID.
-     */
     const purchaseHeading =
       page.getByRole("heading", {
         name: `Purchase #${purchaseId}`,
@@ -363,10 +407,6 @@ test.describe("Admin", () => {
       purchaseHeading,
     ).toBeVisible();
 
-    /*
-     * PendingPurchases renders the purchase details
-     * directly below the heading.
-     */
     const purchaseContainer =
       purchaseHeading.locator("..");
 
@@ -392,9 +432,6 @@ test.describe("Admin", () => {
       .nth(1)
       .fill("1000");
 
-    /*
-     * Payment method.
-     */
     const paymentSelect =
       purchaseContainer.locator("select");
 
@@ -416,22 +453,8 @@ test.describe("Admin", () => {
       .click();
 
     /*
-     * Temporary diagnostic:
-     * Give the UI time to complete the RPC and then
-     * check the database status directly.
-     */
-    await page.waitForTimeout(1000);
-
-    console.log(
-      "Purchase status after UI confirm:",
-      await getPurchaseStatus(purchaseId),
-    );
-
-    /*
      * Step 7:
      * Verify the database state directly.
-     *
-     * We don't depend on a UI success message.
      */
     await expect
       .poll(
@@ -463,6 +486,143 @@ test.describe("Admin", () => {
     expect(outstandingAfter).toBe(
       outstandingBefore + 5500,
     );
+  });
+
+  test("Admin can perform E2E stock adjustments", async ({
+    page,
+  }) => {
+    const testData = await getE2ETestData();
+    const timestamp = Date.now();
+
+    const increaseReason =
+      `E2E adjustment increase ${timestamp}`;
+
+    const decreaseReason =
+      `E2E adjustment decrease ${timestamp}`;
+
+    await page.goto("/");
+
+    /*
+     * Step 1:
+     * Open Stock Adjustment.
+     */
+    await page.getByRole("button", {
+      name: "Stock Adjustment",
+      exact: true,
+    }).click();
+
+    await expect(
+      page.getByRole("heading", {
+        name: "Stock Adjustment",
+        exact: true,
+      }),
+    ).toBeVisible();
+
+    /*
+     * Step 2:
+     * Increase stock by 1.
+     */
+    await page.getByLabel("Product").selectOption(
+      String(testData.productId),
+    );
+
+    await page.getByLabel("Location").selectOption(
+      String(testData.locationId),
+    );
+
+    await page.getByLabel("Adjustment Type")
+      .selectOption("INCREASE");
+
+    await page.getByLabel("Quantity").fill("1");
+
+    await page.getByLabel("Reason").fill(
+      increaseReason,
+    );
+
+    await page.getByLabel("Notes").fill(
+      "E2E stock increase",
+    );
+
+    await page.getByRole("button", {
+      name: "Adjust Stock",
+      exact: true,
+    }).click();
+
+    await expect(
+      page.getByText(
+        /stock adjustment completed successfully/i,
+      ),
+    ).toBeVisible();
+
+    const increaseAdjustment =
+      await findAdjustmentByReason(
+        increaseReason,
+      );
+
+    expect(
+      Number(increaseAdjustment.product_id),
+    ).toBe(testData.productId);
+
+    expect(
+      Number(increaseAdjustment.location_id),
+    ).toBe(testData.locationId);
+
+    expect(
+      Number(increaseAdjustment.quantity),
+    ).toBe(1);
+
+    /*
+     * Step 3:
+     * Decrease stock by 1.
+     */
+    await page.getByLabel("Product").selectOption(
+      String(testData.productId),
+    );
+
+    await page.getByLabel("Location").selectOption(
+      String(testData.locationId),
+    );
+
+    await page.getByLabel("Adjustment Type")
+      .selectOption("DECREASE");
+
+    await page.getByLabel("Quantity").fill("1");
+
+    await page.getByLabel("Reason").fill(
+      decreaseReason,
+    );
+
+    await page.getByLabel("Notes").fill(
+      "E2E stock decrease",
+    );
+
+    await page.getByRole("button", {
+      name: "Adjust Stock",
+      exact: true,
+    }).click();
+
+    await expect(
+      page.getByText(
+        /stock adjustment completed successfully/i,
+      ),
+    ).toBeVisible();
+
+    const decreaseAdjustment =
+      await findAdjustmentByReason(
+        decreaseReason,
+      );
+
+    expect(
+      Number(decreaseAdjustment.product_id),
+    ).toBe(testData.productId);
+
+    expect(
+      Number(decreaseAdjustment.location_id),
+    ).toBe(testData.locationId);
+
+    expect(
+      Number(decreaseAdjustment.quantity),
+    ).toBe(-1);
   });
 
   test("Admin can open Supplier Outstanding", async ({
