@@ -35,6 +35,8 @@ export type E2ETestData = {
   supplierId: number;
   productId: number;
   customerId: number;
+  openingStockLocationId: number;
+  openingStockProductId: number;
 };
 
 export async function getAdminClient(): Promise<SupabaseClient> {
@@ -145,6 +147,53 @@ async function getOrCreateProduct(
   return Number(data.id);
 }
 
+async function getOrCreateOpeningStockProduct(
+  client: SupabaseClient,
+  categoryId: number,
+): Promise<number> {
+  const sku = "E2E-OPENING-001";
+
+  const { data: existing, error: lookupError } =
+    await client
+      .from("products")
+      .select("id")
+      .eq("sku", sku)
+      .maybeSingle();
+
+  if (lookupError) {
+    throw new Error(
+      `Failed to find E2E opening stock product: ${lookupError.message}`,
+    );
+  }
+
+  if (existing) {
+    return Number(existing.id);
+  }
+
+  const { data, error } = await client
+    .from("products")
+    .insert({
+      sku,
+      name: "E2E Opening Stock Sofa",
+      category_id: categoryId,
+      default_selling_price: 20000,
+      unit: "PCS",
+      is_active: true,
+    })
+    .select("id")
+    .single();
+
+  if (error || !data) {
+    throw new Error(
+      `Failed to create E2E opening stock product: ${
+        error?.message ?? "No data returned"
+      }`,
+    );
+  }
+
+  return Number(data.id);
+}
+
 export async function getE2ETestData(): Promise<E2ETestData> {
   const client = await getAdminClient();
 
@@ -169,6 +218,16 @@ export async function getE2ETestData(): Promise<E2ETestData> {
       },
     );
 
+    const openingStockLocationId = await getOrCreateByName(
+  client,
+  "locations",
+  "E2E Opening Stock Location",
+  {
+    name: "E2E Opening Stock Location",
+    is_active: true,
+  },
+);
+
     const supplierId = await getOrCreateByName(
       client,
       "suppliers",
@@ -186,6 +245,12 @@ export async function getE2ETestData(): Promise<E2ETestData> {
       categoryId,
     );
 
+    const openingStockProductId =
+  await getOrCreateOpeningStockProduct(
+    client,
+    categoryId,
+  );
+
     const customerId = await getOrCreateByName(
       client,
       "customers",
@@ -199,12 +264,14 @@ export async function getE2ETestData(): Promise<E2ETestData> {
     );
 
     return {
-      categoryId,
-      locationId,
-      supplierId,
-      productId,
-      customerId,
-    };
+  categoryId,
+  locationId,
+  supplierId,
+  productId,
+  customerId,
+  openingStockLocationId,
+  openingStockProductId,
+};
   } finally {
     await client.auth.signOut();
   }

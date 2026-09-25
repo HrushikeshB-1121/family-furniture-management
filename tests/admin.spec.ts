@@ -261,6 +261,13 @@ test.describe("Admin", () => {
         exact: true,
       }),
     ).toBeVisible();
+
+    await expect(
+      page.getByRole("button", {
+        name: "Opening Stock",
+        exact: true,
+      }),
+    ).toBeVisible();
   });
 
   test("Admin can open Products", async ({
@@ -499,10 +506,6 @@ test.describe("Admin", () => {
     /*
      * Step 8:
      * Verify supplier outstanding.
-     *
-     * Purchase = ₹6,500
-     * Paid     = ₹1,000
-     * Due      = ₹5,500
      */
     await page.reload();
 
@@ -673,45 +676,59 @@ test.describe("Admin", () => {
   });
 
   test("Admin can view Sales History", async ({
-  page,
-}) => {
-  const saleId = await getLatestSaleId();
+    page,
+  }) => {
+    const saleId = await getLatestSaleId();
 
-  await page.goto("/");
+    await page.goto("/");
 
-  await page.getByRole("button", {
-    name: "Sales History",
-    exact: true,
-  }).click();
-
-  await expect(
-    page.getByRole("heading", {
+    await page.getByRole("button", {
       name: "Sales History",
       exact: true,
-    }),
-  ).toBeVisible();
+    }).click();
 
-  const search = page.getByLabel("Search");
+    await expect(
+      page.getByRole("heading", {
+        name: "Sales History",
+        exact: true,
+      }),
+    ).toBeVisible();
 
-  await expect(search).toBeVisible();
+    const search = page.getByLabel("Search");
 
-  await search.fill(String(saleId));
+    await expect(search).toBeVisible();
 
-  const saleHeading = page.getByRole("heading", {
-    name: `Sale #${saleId}`,
-    exact: true,
-  });
+    await search.fill(String(saleId));
 
-  await expect(saleHeading).toBeVisible();
+    const saleHeading =
+      page.getByRole("heading", {
+        name: `Sale #${saleId}`,
+        exact: true,
+      });
 
-  const saleArticle = saleHeading.locator("..");
+    await expect(
+      saleHeading,
+    ).toBeVisible();
 
-  await expect(saleArticle).toContainText("Total:");
-  await expect(saleArticle).toContainText("Paid:");
-  await expect(saleArticle).toContainText("Due:");
+    const saleArticle =
+      saleHeading.locator("..");
 
-  await expect(saleArticle).not.toContainText(
-    /purchase cost|gross profit|total cost|unit cost/i,
-  );
+    await expect(
+      saleArticle,
+    ).toContainText("Total:");
+
+    await expect(
+      saleArticle,
+    ).toContainText("Paid:");
+
+    await expect(
+      saleArticle,
+    ).toContainText("Due:");
+
+    await expect(
+      saleArticle,
+    ).not.toContainText(
+      /purchase cost|gross profit|total cost|unit cost/i,
+    );
   });
 });
