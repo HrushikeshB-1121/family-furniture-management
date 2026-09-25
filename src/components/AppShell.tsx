@@ -12,6 +12,7 @@ import SupplierOutstanding from './SupplierOutstanding';
 import Payments from './Payments';
 import StockTransfer from './StockTransfer';
 import StockAdjustment from './StockAdjustment';
+import SalesHistory from "./SalesHistory";
 
 type UserRole = 'ADMIN' | 'STAFF';
 
@@ -37,7 +38,8 @@ type View =
   | 'SUPPLIER_OUTSTANDING'
   | 'PAYMENTS'
   | 'STOCK_TRANSFER'
-  | 'STOCK_ADJUSTMENT';
+  | 'STOCK_ADJUSTMENT'
+  | 'SALES_HISTORY';
 
 type MenuItem = {
   id: View;
@@ -55,6 +57,11 @@ const menuItems: MenuItem[] = [
     label: 'New Sale',
   },
   {
+    id: 'SALES_HISTORY',
+    label: 'Sales History',
+    adminOnly: true,
+  },
+  {
     id: 'RECEIVE_STOCK',
     label: 'Receive Stock',
   },
@@ -63,10 +70,10 @@ const menuItems: MenuItem[] = [
     label: 'Stock Transfer',
   },
   {
-  id: 'STOCK_ADJUSTMENT',
-  label: 'Stock Adjustment',
-  adminOnly: true,
-},
+    id: 'STOCK_ADJUSTMENT',
+    label: 'Stock Adjustment',
+    adminOnly: true,
+  },
   {
     id: 'CUSTOMERS',
     label: 'Customers',
@@ -150,6 +157,10 @@ function AppShell({ profile, email }: AppShellProps) {
       case 'STOCK_ADJUSTMENT':
         return profile.role === 'ADMIN'
           ? <StockAdjustment />
+          : null;
+      case "SALES_HISTORY":
+        return profile.role === "ADMIN"
+          ? <SalesHistory />
           : null;
 
       default:

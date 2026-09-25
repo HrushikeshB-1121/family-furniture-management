@@ -146,6 +146,35 @@ async function getPurchaseStatus(
   }
 }
 
+async function getLatestSaleId(): Promise<number> {
+  const client = await getAdminClient();
+
+  try {
+    const { data, error } = await client
+      .from("sales")
+      .select("id")
+      .order("created_at", {
+        ascending: false,
+      })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(
+        `Failed to find latest sale: ${error.message}`,
+      );
+    }
+
+    if (!data) {
+      throw new Error("No sale was found.");
+    }
+
+    return Number(data.id);
+  } finally {
+    await client.auth.signOut();
+  }
+}
+
 async function findAdjustmentByReason(
   reason: string,
 ) {
@@ -641,5 +670,48 @@ test.describe("Admin", () => {
         exact: true,
       }),
     ).toBeVisible();
+  });
+
+  test("Admin can view Sales History", async ({
+  page,
+}) => {
+  const saleId = await getLatestSaleId();
+
+  await page.goto("/");
+
+  await page.getByRole("button", {
+    name: "Sales History",
+    exact: true,
+  }).click();
+
+  await expect(
+    page.getByRole("heading", {
+      name: "Sales History",
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  const search = page.getByLabel("Search");
+
+  await expect(search).toBeVisible();
+
+  await search.fill(String(saleId));
+
+  const saleHeading = page.getByRole("heading", {
+    name: `Sale #${saleId}`,
+    exact: true,
+  });
+
+  await expect(saleHeading).toBeVisible();
+
+  const saleArticle = saleHeading.locator("..");
+
+  await expect(saleArticle).toContainText("Total:");
+  await expect(saleArticle).toContainText("Paid:");
+  await expect(saleArticle).toContainText("Due:");
+
+  await expect(saleArticle).not.toContainText(
+    /purchase cost|gross profit|total cost|unit cost/i,
+  );
   });
 });

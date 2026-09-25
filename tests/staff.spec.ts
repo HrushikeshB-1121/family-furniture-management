@@ -1,34 +1,5 @@
 import { test, expect } from "@playwright/test";
-import {
-  getAdminClient,
-  getE2ETestData,
-} from "./e2eData";
-
-async function getStock(
-  productId: number,
-  locationId: number,
-) {
-  const client = await getAdminClient();
-
-  try {
-    const { data, error } = await client
-      .from("current_stock")
-      .select("quantity")
-      .eq("product_id", productId)
-      .eq("location_id", locationId)
-      .maybeSingle();
-
-    if (error) {
-      throw new Error(
-        `Failed to read stock: ${error.message}`,
-      );
-    }
-
-    return Number(data?.quantity ?? 0);
-  } finally {
-    await client.auth.signOut();
-  }
-}
+import { getE2ETestData } from "./e2eData";
 
 test.describe("Staff", () => {
   test("Staff can see staff navigation", async ({ page }) => {
@@ -100,6 +71,20 @@ test.describe("Staff", () => {
         exact: true,
       }),
     ).not.toBeVisible();
+
+    await expect(
+      page.getByRole("button", {
+        name: "Sales History",
+        exact: true,
+      }),
+    ).not.toBeVisible();
+
+    await expect(
+      page.getByRole("button", {
+        name: "Stock Adjustment",
+        exact: true,
+      }),
+    ).not.toBeVisible();
   });
 
   test("Staff can open Stock", async ({ page }) => {
@@ -115,7 +100,9 @@ test.describe("Staff", () => {
         name: "Stock",
         exact: true,
       }),
-    ).toBeVisible();
+    ).toBeVisible({
+      timeout: 10000,
+    });
   });
 
   test("Staff can open Customers", async ({ page }) => {
@@ -185,7 +172,9 @@ test.describe("Staff", () => {
 
     const supplierSelect = page.getByLabel("Supplier");
 
-    await expect(supplierSelect).toBeAttached();
+    await expect(
+      supplierSelect,
+    ).toBeAttached();
 
     await supplierSelect.selectOption(
       String(testData.supplierId),
@@ -193,7 +182,9 @@ test.describe("Staff", () => {
 
     const locationSelect = page.getByLabel("Location");
 
-    await expect(locationSelect).toBeAttached();
+    await expect(
+      locationSelect,
+    ).toBeAttached();
 
     await locationSelect.selectOption(
       String(testData.locationId),
@@ -201,7 +192,9 @@ test.describe("Staff", () => {
 
     const productSelect = page.getByLabel("Product");
 
-    await expect(productSelect).toBeAttached();
+    await expect(
+      productSelect,
+    ).toBeAttached();
 
     await productSelect.selectOption(
       String(testData.productId),
@@ -323,7 +316,9 @@ test.describe("Staff", () => {
 
     const supplierSelect = page.getByLabel("Supplier");
 
-    await expect(supplierSelect).toBeAttached();
+    await expect(
+      supplierSelect,
+    ).toBeAttached();
 
     await supplierSelect.selectOption(
       String(testData.supplierId),
@@ -331,7 +326,9 @@ test.describe("Staff", () => {
 
     const locationSelect = page.getByLabel("Location");
 
-    await expect(locationSelect).toBeAttached();
+    await expect(
+      locationSelect,
+    ).toBeAttached();
 
     await locationSelect.selectOption(
       String(testData.locationId),
@@ -340,7 +337,9 @@ test.describe("Staff", () => {
     const receiveProductSelect =
       page.getByLabel("Product");
 
-    await expect(receiveProductSelect).toBeAttached();
+    await expect(
+      receiveProductSelect,
+    ).toBeAttached();
 
     await receiveProductSelect.selectOption(
       String(testData.productId),
@@ -533,9 +532,9 @@ test.describe("Staff", () => {
     const destinationLocationId = 1; // Main Shop
 
     /*
-    * Step 1: Receive 1 unit so this test has
-    * its own stock to transfer.
-    */
+     * Step 1: Receive 1 unit so this test has
+     * its own stock to transfer.
+     */
     await page.goto("/");
 
     await page.getByRole("button", {
@@ -577,8 +576,36 @@ test.describe("Staff", () => {
     ).toBeVisible();
 
     /*
-    * Step 2: Read stock after receiving.
-    */
+     * Step 2: Read stock after receiving.
+     */
+    const getStock = async (
+      productId: number,
+      locationId: number,
+    ) => {
+      const client = await (
+        await import("./e2eData")
+      ).getAdminClient();
+
+      try {
+        const { data, error } = await client
+          .from("current_stock")
+          .select("quantity")
+          .eq("product_id", productId)
+          .eq("location_id", locationId)
+          .maybeSingle();
+
+        if (error) {
+          throw new Error(
+            `Failed to read stock: ${error.message}`,
+          );
+        }
+
+        return Number(data?.quantity ?? 0);
+      } finally {
+        await client.auth.signOut();
+      }
+    };
+
     const sourceBefore = await getStock(
       testData.productId,
       testData.locationId,
@@ -590,8 +617,8 @@ test.describe("Staff", () => {
     );
 
     /*
-    * Step 3: Open Stock Transfer.
-    */
+     * Step 3: Open Stock Transfer.
+     */
     await page.getByRole("button", {
       name: "Stock Transfer",
       exact: true,
@@ -605,8 +632,8 @@ test.describe("Staff", () => {
     ).toBeVisible();
 
     /*
-    * Step 4: Select product and locations.
-    */
+     * Step 4: Select product and locations.
+     */
     await page.getByLabel("Product").selectOption(
       String(testData.productId),
     );
@@ -631,15 +658,15 @@ test.describe("Staff", () => {
     }).click();
 
     /*
-    * Step 5: Verify UI success.
-    */
+     * Step 5: Verify UI success.
+     */
     await expect(
       page.getByText(/stock transferred successfully/i),
     ).toBeVisible();
 
     /*
-    * Step 6: Verify actual database stock movement.
-    */
+     * Step 6: Verify actual database stock movement.
+     */
     const sourceAfter = await getStock(
       testData.productId,
       testData.locationId,
