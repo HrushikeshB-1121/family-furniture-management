@@ -13,6 +13,7 @@ import Payments from './Payments';
 import StockTransfer from './StockTransfer';
 import StockAdjustment from './StockAdjustment';
 import SalesHistory from "./SalesHistory";
+import OpeningStock from './OpeningStock';
 
 type UserRole = 'ADMIN' | 'STAFF';
 
@@ -39,7 +40,8 @@ type View =
   | 'PAYMENTS'
   | 'STOCK_TRANSFER'
   | 'STOCK_ADJUSTMENT'
-  | 'SALES_HISTORY';
+  | 'SALES_HISTORY'
+  | 'OPENING_STOCK';
 
 type MenuItem = {
   id: View;
@@ -73,6 +75,11 @@ const menuItems: MenuItem[] = [
     id: 'STOCK_ADJUSTMENT',
     label: 'Stock Adjustment',
     adminOnly: true,
+  },
+  {
+  id: 'OPENING_STOCK',
+  label: 'Opening Stock',
+  adminOnly: true,
   },
   {
     id: 'CUSTOMERS',
@@ -162,7 +169,10 @@ function AppShell({ profile, email }: AppShellProps) {
         return profile.role === "ADMIN"
           ? <SalesHistory />
           : null;
-
+      case 'OPENING_STOCK':
+        return profile.role === 'ADMIN'
+          ? <OpeningStock />
+          : null;
       default:
         return <Stock />;
     }

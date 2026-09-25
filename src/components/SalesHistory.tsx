@@ -21,6 +21,7 @@ type SaleItem = {
   selling_price: number;
   total_amount: number;
   products: Product | null;
+  locations: Location | null;
 };
 
 type Sale = {
@@ -73,6 +74,9 @@ export default function SalesHistory() {
           products (
             sku,
             name
+          ),
+          locations (
+            name
           )
         )
       `)
@@ -112,19 +116,32 @@ export default function SalesHistory() {
           customers: customer,
           locations: location,
           sale_items: (row.sale_items ?? []).map(
-            (item) => ({
-              id: Number(item.id),
-              quantity: Number(item.quantity),
-              selling_price: Number(
-                item.selling_price,
-              ),
-              total_amount: Number(
-                item.total_amount,
-              ),
-              products: Array.isArray(item.products)
+            (item) => {
+              const itemLocation = Array.isArray(
+                item.locations,
+              )
+                ? item.locations[0] ?? null
+                : item.locations;
+
+              const product = Array.isArray(
+                item.products,
+              )
                 ? item.products[0] ?? null
-                : item.products,
-            }),
+                : item.products;
+
+              return {
+                id: Number(item.id),
+                quantity: Number(item.quantity),
+                selling_price: Number(
+                  item.selling_price,
+                ),
+                total_amount: Number(
+                  item.total_amount,
+                ),
+                products: product,
+                locations: itemLocation,
+              };
+            },
           ),
         };
       },
@@ -148,23 +165,29 @@ export default function SalesHistory() {
       const customerPhone =
         sale.customers?.phone ?? "";
 
-      const locationName =
+      const saleLocation =
         sale.locations?.name ?? "";
 
-      const productText = sale.sale_items
-        .map((item) =>
-          `${item.products?.sku ?? ""} ${
-            item.products?.name ?? ""
-          }`,
-        )
+      const itemText = sale.sale_items
+        .map((item) => {
+          const productText =
+            `${item.products?.sku ?? ""} ${
+              item.products?.name ?? ""
+            }`;
+
+          const locationText =
+            item.locations?.name ?? "";
+
+          return `${productText} ${locationText}`;
+        })
         .join(" ");
 
       return (
         String(sale.id).includes(value) ||
         customerName.toLowerCase().includes(value) ||
         customerPhone.toLowerCase().includes(value) ||
-        locationName.toLowerCase().includes(value) ||
-        productText.toLowerCase().includes(value)
+        saleLocation.toLowerCase().includes(value) ||
+        itemText.toLowerCase().includes(value)
       );
     });
   }, [sales, search]);
@@ -179,6 +202,30 @@ export default function SalesHistory() {
         Number(sale.paid_now),
       0,
     );
+  }
+
+  function getSaleLocationLabel(sale: Sale) {
+    if (sale.locations?.name) {
+      return sale.locations.name;
+    }
+
+    const uniqueLocations = Array.from(
+      new Set(
+        sale.sale_items
+          .map((item) => item.locations?.name)
+          .filter(Boolean),
+      ),
+    );
+
+    if (uniqueLocations.length === 1) {
+      return uniqueLocations[0];
+    }
+
+    if (uniqueLocations.length > 1) {
+      return "Multiple locations";
+    }
+
+    return "-";
   }
 
   if (loading) {
@@ -258,13 +305,14 @@ export default function SalesHistory() {
 
                 <p>
                   <strong>Location:</strong>{" "}
-                  {sale.locations?.name ?? "-"}
+                  {getSaleLocationLabel(sale)}
                 </p>
 
                 <table>
                   <thead>
                     <tr>
                       <th>Product</th>
+                      <th>Location</th>
                       <th>Qty</th>
                       <th>Selling Price</th>
                       <th>Total</th>
@@ -280,6 +328,10 @@ export default function SalesHistory() {
                           </strong>
                           <br />
                           {item.products?.name ?? "-"}
+                        </td>
+
+                        <td>
+                          {item.locations?.name ?? "-"}
                         </td>
 
                         <td>
