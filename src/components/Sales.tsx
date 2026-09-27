@@ -64,6 +64,13 @@ function normalizePhone(value: string) {
   return digits;
 }
 
+function getLocalDateTimeValue(date = new Date()) {
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60 * 1000);
+
+  return local.toISOString().slice(0, 16);
+}
+
 export default function Sales() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -115,6 +122,10 @@ export default function Sales() {
     useState("CASH");
 
   const [notes, setNotes] = useState("");
+
+  const [saleDate, setSaleDate] = useState(
+    getLocalDateTimeValue(),
+  );
 
   const [loadingData, setLoadingData] =
     useState(true);
@@ -380,6 +391,7 @@ export default function Sales() {
     setPaidNow("");
     setPaymentMethod("CASH");
     setNotes("");
+    setSaleDate(getLocalDateTimeValue());
 
     setNewCustomerType("INDIVIDUAL");
     setNewCustomerName("");
@@ -724,6 +736,22 @@ export default function Sales() {
     setMessage("");
     setErrorMessage("");
 
+    if (!saleDate) {
+      setErrorMessage(
+        "Sale date and time is required.",
+      );
+      return;
+    }
+
+    const saleDateValue = new Date(saleDate);
+
+    if (Number.isNaN(saleDateValue.getTime())) {
+      setErrorMessage(
+        "Enter a valid sale date and time.",
+      );
+      return;
+    }
+
     if (!selectedCustomer) {
       setErrorMessage(
         "Select or create a customer using the phone number.",
@@ -790,6 +818,8 @@ export default function Sales() {
                 : null,
             p_notes:
               notes.trim() || null,
+            p_sale_date:
+              saleDateValue.toISOString(),
           },
         );
 
@@ -802,7 +832,7 @@ export default function Sales() {
       const bill: BillData = {
         saleId,
         saleDate:
-          new Date().toISOString(),
+          saleDateValue.toISOString(),
         customer:
           selectedCustomer,
         items: cart,
@@ -1175,6 +1205,35 @@ export default function Sales() {
         )}
 
         <form onSubmit={handleSubmit}>
+          <section className="sales-section">
+            <h3>Sale Details</h3>
+
+            <div className="sales-row">
+              <div className="sales-field">
+                <label htmlFor="sale-date">
+                  Sale Date &amp; Time
+                </label>
+
+                <input
+                  id="sale-date"
+                  type="datetime-local"
+                  value={saleDate}
+                  onChange={(event) =>
+                    setSaleDate(
+                      event.target.value,
+                    )
+                  }
+                  required
+                />
+
+                <p className="product-picker-hint">
+                  Defaults to now. Change this when
+                  the sale actually happened earlier.
+                </p>
+              </div>
+            </div>
+          </section>
+
           <section className="sales-section">
             <h3>Customer</h3>
 

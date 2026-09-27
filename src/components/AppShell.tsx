@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 
 import Products from './Products';
@@ -15,6 +16,8 @@ import StockTransfer from './StockTransfer';
 import StockAdjustment from './StockAdjustment';
 import SalesHistory from './SalesHistory';
 import OpeningStock from './OpeningStock';
+import Expenses from './Expenses';
+import DailyTransactions from './DailyTransactions';
 
 type UserRole = 'ADMIN' | 'STAFF';
 
@@ -40,10 +43,12 @@ type View =
   | 'CUSTOMER_OUTSTANDING'
   | 'SUPPLIER_OUTSTANDING'
   | 'PAYMENTS'
+  | 'DAILY_TRANSACTIONS'
   | 'STOCK_TRANSFER'
   | 'STOCK_ADJUSTMENT'
   | 'SALES_HISTORY'
-  | 'OPENING_STOCK';
+  | 'OPENING_STOCK'
+  | 'EXPENSES';
 
 type MenuItem = {
   id: View;
@@ -55,6 +60,11 @@ type MenuGroup = {
   id: string;
   label: string;
   items: View[];
+};
+
+type DesktopDropdownPosition = {
+  top: number;
+  left: number;
 };
 
 const menuItems: MenuItem[] = [
@@ -123,6 +133,16 @@ const menuItems: MenuItem[] = [
     label: 'Payments',
     adminOnly: true,
   },
+  {
+    id: 'DAILY_TRANSACTIONS',
+    label: 'Daily Transactions',
+    adminOnly: true,
+  },
+  {
+    id: 'EXPENSES',
+    label: 'Expenses',
+    adminOnly: true,
+  },
 ];
 
 const menuGroups: MenuGroup[] = [
@@ -149,6 +169,7 @@ const menuGroups: MenuGroup[] = [
     id: 'payments',
     label: 'Payments & Outstanding',
     items: [
+      'DAILY_TRANSACTIONS',
       'PAYMENTS',
       'CUSTOMER_OUTSTANDING',
       'SUPPLIER_OUTSTANDING',
@@ -160,6 +181,7 @@ const menuGroups: MenuGroup[] = [
     items: [
       'PRODUCTS',
       'CATEGORIES',
+      'EXPENSES',
     ],
   },
   {
@@ -203,6 +225,13 @@ function AppShell({
   const [openDesktopGroup, setOpenDesktopGroup] =
     useState<string | null>(null);
 
+  const [
+    desktopDropdownPosition,
+    setDesktopDropdownPosition,
+  ] = useState<DesktopDropdownPosition | null>(
+    null,
+  );
+
   const [mobileMoreOpen, setMobileMoreOpen] =
     useState(false);
 
@@ -236,8 +265,7 @@ function AppShell({
     mobilePrimaryViews
       .map((view) =>
         visibleMenuItems.find(
-          (item) =>
-            item.id === view,
+          (item) => item.id === view,
         ),
       )
       .filter(
@@ -259,6 +287,26 @@ function AppShell({
         item.id === 'PENDING_PURCHASES',
     );
 
+  const openDesktopGroupData =
+    menuGroups.find(
+      (group) =>
+        group.id === openDesktopGroup,
+    );
+
+  const openDesktopGroupItems =
+    openDesktopGroupData
+      ? openDesktopGroupData.items
+          .map((view) =>
+            visibleMenuItems.find(
+              (item) => item.id === view,
+            ),
+          )
+          .filter(
+            (item): item is MenuItem =>
+              Boolean(item),
+          )
+      : [];
+
   function handleViewChange(
     view: View,
   ) {
@@ -270,18 +318,48 @@ function AppShell({
     );
 
     setOpenDesktopGroup(null);
+    setDesktopDropdownPosition(null);
     setMobileMoreOpen(false);
   }
 
   function handleDesktopGroupChange(
     groupId: string,
+    button: HTMLButtonElement,
   ) {
-    setOpenDesktopGroup(
-      (current) =>
-        current === groupId
-          ? null
-          : groupId,
+    if (openDesktopGroup === groupId) {
+      setOpenDesktopGroup(null);
+      setDesktopDropdownPosition(null);
+      return;
+    }
+
+    const rect =
+      button.getBoundingClientRect();
+
+    const dropdownWidth = 220;
+    const horizontalPadding = 8;
+
+    const maxLeft =
+      Math.max(
+        horizontalPadding,
+        window.innerWidth -
+          dropdownWidth -
+          horizontalPadding,
+      );
+
+    const left = Math.min(
+      Math.max(
+        horizontalPadding,
+        rect.left,
+      ),
+      maxLeft,
     );
+
+    setDesktopDropdownPosition({
+      top: rect.bottom + 6,
+      left,
+    });
+
+    setOpenDesktopGroup(groupId);
   }
 
   async function handleLogout() {
@@ -332,6 +410,16 @@ function AppShell({
           ? <Payments />
           : null;
 
+      case 'DAILY_TRANSACTIONS':
+        return profile.role === 'ADMIN'
+          ? <DailyTransactions />
+          : null;
+
+      case 'EXPENSES':
+        return profile.role === 'ADMIN'
+          ? <Expenses />
+          : null;
+
       case 'STOCK_TRANSFER':
         return <StockTransfer />;
 
@@ -368,6 +456,7 @@ function AppShell({
           .app-shell {
             min-height: 100svh;
             background: #f6f8fb;
+            overflow: visible !important;
           }
 
           .app-header {
@@ -429,33 +518,20 @@ function AppShell({
           .desktop-nav {
             position: sticky;
             top: 0;
-            z-index: 1000;
-            width: 100%;
-            box-sizing: border-box;
+            z-index: 100;
+            display: flex;
+            gap: 6px;
+            padding: 9px 24px;
             background: #ffffff;
             border-bottom: 1px solid #e4e7ec;
             box-shadow:
               0 1px 2px rgba(16, 24, 40, 0.03);
-            isolation: isolate;
-            overflow: visible !important;
-          }
-
-          .desktop-nav-main {
-            position: relative;
-            z-index: 1001;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            min-height: 56px;
-            box-sizing: border-box;
-            padding: 9px 24px;
             overflow: visible !important;
           }
 
           .desktop-nav-group {
             position: relative;
-            z-index: 1002;
-            flex: 0 0 auto;
+            overflow: visible !important;
           }
 
           .desktop-nav-group-button {
@@ -473,7 +549,8 @@ function AppShell({
             cursor: pointer;
           }
 
-          .desktop-nav-group-button:hover {
+          .desktop-nav-group-button:hover,
+          .desktop-nav-group-button.open {
             background: #f9fafb;
             border-color: #e4e7ec;
             color: #101828;
@@ -485,64 +562,27 @@ function AppShell({
             color: #1d4ed8;
           }
 
-          .desktop-nav-group-button.open {
-            background: #f9fafb;
-            border-color: #d0d5dd;
-            color: #101828;
-          }
-
-          .desktop-nav-quick-button {
-            display: inline-flex;
-            align-items: center;
-            min-height: 38px;
-            padding: 7px 13px;
-            border: 1px solid transparent;
-            border-radius: 8px;
-            background: transparent;
-            color: #667085;
-            font-size: 13px;
-            font-weight: 600;
-            cursor: pointer;
-          }
-
-          .desktop-nav-quick-button:hover {
-            background: #f9fafb;
-            border-color: #e4e7ec;
-            color: #101828;
-          }
-
-          .desktop-nav-quick-button.active {
-            background: #eff6ff;
-            border-color: #bfdbfe;
-            color: #1d4ed8;
-          }
-
           .desktop-nav-chevron {
-            font-size: 9px;
+            font-size: 10px;
             line-height: 1;
           }
 
           .desktop-nav-dropdown {
-            position: absolute;
-            top: calc(100% + 4px);
-            left: 0;
-            z-index: 99999;
-            width: 240px;
-            max-width: calc(100vw - 32px);
+            position: fixed;
+            z-index: 100000;
+            min-width: 220px;
             padding: 6px;
-            box-sizing: border-box;
             background: #ffffff;
-            border: 1px solid #d0d5dd;
+            border: 1px solid #e4e7ec;
             border-radius: 10px;
             box-shadow:
-              0 12px 28px rgba(16, 24, 40, 0.16);
+              0 10px 24px rgba(16, 24, 40, 0.18);
           }
 
           .desktop-nav-item {
             display: block;
             width: 100%;
             min-height: 38px;
-            box-sizing: border-box;
             padding: 8px 11px;
             border: 1px solid transparent;
             border-radius: 7px;
@@ -561,14 +601,34 @@ function AppShell({
 
           .desktop-nav-item.active {
             background: #eff6ff;
-            border-color: #bfdbfe;
             color: #1d4ed8;
             font-weight: 600;
           }
 
+          .desktop-nav-quick-button {
+            display: inline-flex;
+            align-items: center;
+            min-height: 38px;
+            padding: 7px 13px;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            background: transparent;
+            color: #667085;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+          }
+
+          .desktop-nav-quick-button:hover,
+          .desktop-nav-quick-button.active {
+            background: #eff6ff;
+            border-color: #bfdbfe;
+            color: #1d4ed8;
+          }
+
           .app-content {
             position: relative;
-            z-index: 1;
+            z-index: 0;
             width: 100%;
             box-sizing: border-box;
           }
@@ -583,24 +643,6 @@ function AppShell({
 
           .mobile-more-panel {
             display: none;
-          }
-
-          @media (max-width: 900px) and (min-width: 641px) {
-            .desktop-nav-main {
-              padding-left: 14px;
-              padding-right: 14px;
-            }
-
-            .desktop-nav-group-button,
-            .desktop-nav-quick-button {
-              padding-left: 10px;
-              padding-right: 10px;
-              font-size: 12px;
-            }
-
-            .desktop-nav-dropdown {
-              min-width: 210px;
-            }
           }
 
           @media (max-width: 640px) {
@@ -653,7 +695,9 @@ function AppShell({
               gap: 2px;
               padding:
                 7px 7px
-                calc(7px + env(safe-area-inset-bottom));
+                calc(
+                  7px + env(safe-area-inset-bottom)
+                );
               background: rgba(255, 255, 255, 0.98);
               border-top: 1px solid #e4e7ec;
               box-shadow:
@@ -822,125 +866,138 @@ function AppShell({
         </header>
 
         <nav className="desktop-nav">
-          <div className="desktop-nav-main">
-            {menuGroups.map((group) => {
-              const groupItems =
-                group.items
-                  .map((view) =>
-                    visibleMenuItems.find(
-                      (item) =>
-                        item.id === view,
-                    ),
-                  )
-                  .filter(
-                    (item): item is MenuItem =>
-                      Boolean(item),
-                  );
-
-              if (
-                groupItems.length === 0
-              ) {
-                return null;
-              }
-
-              const groupHasActiveView =
-                groupItems.some(
-                  (item) =>
-                    item.id === activeView,
+          {menuGroups.map((group) => {
+            const groupItems =
+              group.items
+                .map((view) =>
+                  visibleMenuItems.find(
+                    (item) =>
+                      item.id === view,
+                  ),
+                )
+                .filter(
+                  (
+                    item,
+                  ): item is MenuItem =>
+                    Boolean(item),
                 );
 
-              const isOpen =
-                openDesktopGroup ===
-                group.id;
+            if (
+              groupItems.length === 0
+            ) {
+              return null;
+            }
 
-              return (
-                <div
-                  key={group.id}
-                  className="desktop-nav-group"
+            const groupHasActiveView =
+              groupItems.some(
+                (item) =>
+                  item.id === activeView,
+              );
+
+            const isOpen =
+              openDesktopGroup ===
+              group.id;
+
+            return (
+              <div
+                key={group.id}
+                className="desktop-nav-group"
+              >
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  className={[
+                    'desktop-nav-group-button',
+                    groupHasActiveView
+                      ? 'active'
+                      : '',
+                    isOpen
+                      ? 'open'
+                      : '',
+                  ]
+                    .join(' ')
+                    .trim()}
+                  onClick={(event) =>
+                    handleDesktopGroupChange(
+                      group.id,
+                      event.currentTarget,
+                    )
+                  }
                 >
+                  {group.label}
+
+                  <span className="desktop-nav-chevron">
+                    {isOpen
+                      ? '▲'
+                      : '▼'}
+                  </span>
+                </button>
+              </div>
+            );
+          })}
+
+          {profile.role === 'ADMIN' &&
+            pendingPurchasesItem && (
+              <button
+                type="button"
+                className={[
+                  'desktop-nav-quick-button',
+                  activeView ===
+                  'PENDING_PURCHASES'
+                    ? 'active'
+                    : '',
+                ]
+                  .join(' ')
+                  .trim()}
+                onClick={() =>
+                  handleViewChange(
+                    'PENDING_PURCHASES',
+                  )
+                }
+              >
+                {pendingPurchasesItem.label}
+              </button>
+            )}
+        </nav>
+
+        {openDesktopGroup &&
+          desktopDropdownPosition &&
+          typeof document !== 'undefined' &&
+          createPortal(
+            <div
+              className="desktop-nav-dropdown"
+              style={{
+                top: desktopDropdownPosition.top,
+                left: desktopDropdownPosition.left,
+              }}
+            >
+              {openDesktopGroupItems.map(
+                (item) => (
                   <button
+                    key={item.id}
                     type="button"
-                    aria-expanded={isOpen}
                     className={[
-                      'desktop-nav-group-button',
-                      groupHasActiveView
+                      'desktop-nav-item',
+                      item.id ===
+                      activeView
                         ? 'active'
-                        : '',
-                      isOpen
-                        ? 'open'
                         : '',
                     ]
                       .join(' ')
                       .trim()}
                     onClick={() =>
-                      handleDesktopGroupChange(
-                        group.id,
+                      handleViewChange(
+                        item.id,
                       )
                     }
                   >
-                    {group.label}
-
-                    <span className="desktop-nav-chevron">
-                      {isOpen ? '▲' : '▼'}
-                    </span>
+                    {item.label}
                   </button>
-
-                  {isOpen && (
-                    <div className="desktop-nav-dropdown">
-                      {groupItems.map(
-                        (item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            className={[
-                              'desktop-nav-item',
-                              item.id ===
-                              activeView
-                                ? 'active'
-                                : '',
-                            ]
-                              .join(' ')
-                              .trim()}
-                            onClick={() =>
-                              handleViewChange(
-                                item.id,
-                              )
-                            }
-                          >
-                            {item.label}
-                          </button>
-                        ),
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {profile.role === 'ADMIN' &&
-              pendingPurchasesItem && (
-                <button
-                  type="button"
-                  className={[
-                    'desktop-nav-quick-button',
-                    activeView ===
-                    'PENDING_PURCHASES'
-                      ? 'active'
-                      : '',
-                  ]
-                    .join(' ')
-                    .trim()}
-                  onClick={() =>
-                    handleViewChange(
-                      'PENDING_PURCHASES',
-                    )
-                  }
-                >
-                  Pending Purchases
-                </button>
+                ),
               )}
-          </div>
-        </nav>
+            </div>,
+            document.body,
+          )}
 
         {currentPage && (
           <div className="app-current-page">
@@ -986,7 +1043,8 @@ function AppShell({
               mobileMoreOpen ||
               mobileMoreItems.some(
                 (item) =>
-                  item.id === activeView,
+                  item.id ===
+                  activeView,
               )
                 ? 'more-active'
                 : '',
@@ -1032,7 +1090,8 @@ function AppShell({
                     .map((view) =>
                       mobileMoreItems.find(
                         (item) =>
-                          item.id === view,
+                          item.id ===
+                          view,
                       ),
                     )
                     .filter(

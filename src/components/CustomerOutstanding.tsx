@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { supabase } from '../lib/supabase';
@@ -16,6 +17,7 @@ type Customer = {
 };
 
 type CustomerTransaction = {
+  id: number;
   customer_id: number;
   transaction_type:
     | 'OPENING_BALANCE'
@@ -25,6 +27,8 @@ type CustomerTransaction = {
   amount: number;
   sale_id: number | null;
   transaction_date: string;
+  payment_method: string | null;
+  notes: string | null;
 };
 
 type Sale = {
@@ -32,6 +36,8 @@ type Sale = {
   customer_id: number | null;
   total_amount: number;
   paid_now: number;
+  sale_date: string;
+  payment_method: string | null;
 };
 
 type CustomerBalance =
@@ -43,6 +49,16 @@ type CustomerBalance =
     adjustments: number;
     outstanding: number;
   };
+
+type CustomerHistoryEntry = {
+  id: string;
+  transactionDate: string;
+  typeLabel: string;
+  reference: string;
+  delta: number;
+  paymentMethod: string | null;
+  notes: string | null;
+};
 
 function CustomerOutstanding() {
   const [customers, setCustomers] =
@@ -58,6 +74,12 @@ function CustomerOutstanding() {
 
   const [search, setSearch] =
     useState('');
+
+  const [historyCustomerId, setHistoryCustomerId] =
+    useState('');
+
+  const historySectionRef =
+    useRef<HTMLElement | null>(null);
 
   const [loading, setLoading] =
     useState(true);
@@ -91,7 +113,7 @@ function CustomerOutstanding() {
           'customer_transactions',
         )
         .select(
-          'customer_id, transaction_type, amount, sale_id, transaction_date',
+          'id, customer_id, transaction_type, amount, sale_id, transaction_date, payment_method, notes',
         )
         .order(
           'transaction_date',
@@ -100,7 +122,7 @@ function CustomerOutstanding() {
       supabase
         .from('sales')
         .select(
-          'id, customer_id, total_amount, paid_now',
+          'id, customer_id, total_amount, paid_now, sale_date, payment_method',
         ),
     ]);
 
@@ -148,6 +170,9 @@ function CustomerOutstanding() {
       ).map(
         (transaction) => ({
           ...transaction,
+          id: Number(
+            transaction.id,
+          ),
           amount: Number(
             transaction.amount,
           ),
@@ -168,6 +193,9 @@ function CustomerOutstanding() {
         []
       ).map((sale) => ({
         ...sale,
+        id: Number(
+          sale.id,
+        ),
         total_amount:
           Number(
             sale.total_amount,
@@ -346,6 +374,292 @@ function CustomerOutstanding() {
       search,
     ]);
 
+  const selectedHistoryCustomer =
+    useMemo(() => {
+      return customers.find(
+        (customer) =>
+          String(customer.id) ===
+          historyCustomerId,
+      ) ?? null;
+    }, [
+      customers,
+      historyCustomerId,
+    ]);
+
+  useEffect(() => {
+    if (!historyCustomerId) {
+      return;
+    }
+
+    const animationFrame =
+      window.requestAnimationFrame(() => {
+        historySectionRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+      });
+
+    return () =>
+      window.cancelAnimationFrame(
+        animationFrame,
+      );
+  }, [historyCustomerId]);
+
+  const selectedCustomerTransactions =
+    useMemo(() => {
+      if (!selectedHistoryCustomer) {
+        return [];
+      }
+
+      return transactions.filter(
+        (transaction) =>
+          transaction.customer_id ===
+          selectedHistoryCustomer.id,
+      );
+    }, [
+      selectedHistoryCustomer,
+      transactions,
+    ]);
+
+  const selectedCustomerSales =
+    useMemo(() => {
+      if (!selectedHistoryCustomer) {
+        return [];
+      }
+
+      return sales.filter(
+        (sale) =>
+          sale.customer_id ===
+          selectedHistoryCustomer.id,
+      );
+    }, [
+      selectedHistoryCustomer,
+      sales,
+    ]);
+
+  const historyEntries =
+    useMemo<CustomerHistoryEntry[]>(() => {
+      if (!selectedHistoryCustomer) {
+        return [];
+      }
+
+      const saleById =
+        new Map(
+          selectedCustomerSales.map(
+            (sale) => [
+              sale.id,
+              sale,
+            ],
+          ),
+        );
+
+      const paymentSaleIds =
+        new Set(
+          selectedCustomerTransactions
+            .filter(
+              (transaction) =>
+                transaction.transaction_type ===
+                  'PAYMENT' &&
+                transaction.sale_id !==
+                  null,
+            )
+            .map(
+              (transaction) =>
+                transaction.sale_id,
+            ),
+        );
+
+      const entries: Array<
+        CustomerHistoryEntry & {
+          sortOrder: number;
+        }
+      > = [];
+
+      for (const transaction of
+        selectedCustomerTransactions) {
+        if (
+          transaction.transaction_type ===
+          'SALE'
+        ) {
+          const sale =
+            transaction.sale_id !== null
+              ? saleById.get(
+                  transaction.sale_id,
+                )
+              : undefined;
+
+          const saleAmount =
+            sale?.total_amount ??
+            transaction.amount;
+
+          entries.push({
+            id: `sale-${transaction.id}`,
+            transactionDate:
+              transaction.transaction_date,
+            typeLabel: 'Sale',
+            reference:
+              transaction.sale_id !==
+              null
+                ? `Bill #${transaction.sale_id}`
+                : 'Sale',
+            delta: saleAmount,
+            paymentMethod:
+              sale?.payment_method ??
+              null,
+            notes:
+              transaction.notes,
+            sortOrder: 10,
+          });
+
+          const paidAtSale =
+            sale?.paid_now ?? 0;
+
+          if (
+            paidAtSale > 0 &&
+            (
+              transaction.sale_id ===
+                null ||
+              !paymentSaleIds.has(
+                transaction.sale_id,
+              )
+            )
+          ) {
+            entries.push({
+              id: `sale-payment-${transaction.id}`,
+              transactionDate:
+                transaction.transaction_date,
+              typeLabel:
+                'Payment at Sale',
+              reference:
+                transaction.sale_id !==
+                null
+                  ? `Bill #${transaction.sale_id}`
+                  : 'Payment',
+              delta:
+                -paidAtSale,
+              paymentMethod:
+                sale?.payment_method ??
+                null,
+              notes: null,
+              sortOrder: 20,
+            });
+          }
+
+          continue;
+        }
+
+        if (
+          transaction.transaction_type ===
+          'PAYMENT'
+        ) {
+          entries.push({
+            id: `payment-${transaction.id}`,
+            transactionDate:
+              transaction.transaction_date,
+            typeLabel:
+              'Payment',
+            reference: `Pay #${transaction.id}`,
+            delta:
+              -transaction.amount,
+            paymentMethod:
+              transaction.payment_method,
+            notes:
+              transaction.notes,
+            sortOrder: 30,
+          });
+
+          continue;
+        }
+
+        if (
+          transaction.transaction_type ===
+          'OPENING_BALANCE'
+        ) {
+          entries.push({
+            id: `opening-${transaction.id}`,
+            transactionDate:
+              transaction.transaction_date,
+            typeLabel:
+              'Opening Balance',
+            reference:
+              'Opening Balance',
+            delta:
+              transaction.amount,
+            paymentMethod: null,
+            notes:
+              transaction.notes,
+            sortOrder: 5,
+          });
+
+          continue;
+        }
+
+        if (
+          transaction.transaction_type ===
+          'ADJUSTMENT'
+        ) {
+          entries.push({
+            id: `adjustment-${transaction.id}`,
+            transactionDate:
+              transaction.transaction_date,
+            typeLabel:
+              'Adjustment',
+            reference:
+              'Adjustment',
+            delta:
+              transaction.amount,
+            paymentMethod: null,
+            notes:
+              transaction.notes,
+            sortOrder: 40,
+          });
+        }
+      }
+
+      entries.sort(
+        (a, b) => {
+          const dateDifference =
+            new Date(
+              a.transactionDate,
+            ).getTime() -
+            new Date(
+              b.transactionDate,
+            ).getTime();
+
+          if (
+            dateDifference !==
+            0
+          ) {
+            return dateDifference;
+          }
+
+          return (
+            a.sortOrder -
+            b.sortOrder
+          );
+        },
+      );
+
+      return entries.map(
+        (entry) => entry,
+      );
+    }, [
+      selectedHistoryCustomer,
+      selectedCustomerTransactions,
+      selectedCustomerSales,
+    ]);
+
+  const historyEndingBalance =
+    historyEntries.reduce(
+      (
+        balance,
+        entry,
+      ) =>
+        balance +
+        entry.delta,
+      0,
+    );
+
   const totalOutstanding =
     filteredBalances.reduce(
       (
@@ -374,8 +688,57 @@ function CustomerOutstanding() {
   function formatMoney(
     value: number,
   ) {
-    return value.toLocaleString(
+    return Math.abs(value).toLocaleString(
       'en-IN',
+    );
+  }
+
+  function formatSignedMoney(
+    value: number,
+  ) {
+    if (value > 0) {
+      return `+INR ${formatMoney(
+        value,
+      )}`;
+    }
+
+    if (value < 0) {
+      return `-INR ${formatMoney(
+        value,
+      )}`;
+    }
+
+    return 'INR 0';
+  }
+
+  function formatDateTime(
+    value: string,
+  ) {
+    return new Date(
+      value,
+    ).toLocaleString(
+      'en-IN',
+      {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      },
+    );
+  }
+
+  function handleHistoryClick(
+    customerId: number,
+  ) {
+    const nextCustomerId =
+      String(customerId);
+
+    setHistoryCustomerId(
+      historyCustomerId ===
+        nextCustomerId
+        ? ''
+        : nextCustomerId,
     );
   }
 
@@ -569,7 +932,7 @@ function CustomerOutstanding() {
           }
 
           .balance-main {
-            margin: 4px 18px 18px;
+            margin: 4px 18px 12px;
             padding: 14px;
             border: 1px solid #fde68a;
             border-radius: 10px;
@@ -589,6 +952,35 @@ function CustomerOutstanding() {
             font-weight: 750;
           }
 
+          .balance-actions {
+            padding: 0 18px 18px;
+          }
+
+          .history-button {
+            width: 100%;
+            min-height: 40px;
+            padding: 8px 12px;
+            border: 1px solid #d0d5dd;
+            border-radius: 8px;
+            background: #ffffff;
+            color: #175cd3;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+          }
+
+          .history-button:hover {
+            background: #eff6ff;
+            border-color: #93c5fd;
+          }
+
+          .history-button:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow:
+              0 0 0 3px rgba(37, 99, 235, 0.12);
+          }
+
           .balance-empty {
             padding: 32px 20px;
             text-align: center;
@@ -596,6 +988,175 @@ function CustomerOutstanding() {
             border: 1px solid #e4e7ec;
             border-radius: 12px;
             color: #667085;
+          }
+
+          .customer-history-section {
+            margin-top: 28px;
+            scroll-margin-top: 24px;
+            margin-bottom: 20px;
+            padding: 20px;
+            background: #ffffff;
+            border: 1px solid #e4e7ec;
+            border-radius: 14px;
+            box-shadow:
+              0 1px 2px rgba(16, 24, 40, 0.05);
+          }
+
+          .customer-history-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 16px;
+          }
+
+          .customer-history-header h2 {
+            margin-bottom: 5px;
+          }
+
+          .customer-history-description {
+            color: #667085;
+            font-size: 14px;
+          }
+
+          .customer-history-close {
+            flex: 0 0 auto;
+            min-height: 36px;
+            padding: 7px 11px;
+            border: 1px solid #d0d5dd;
+            border-radius: 7px;
+            background: #ffffff;
+            color: #344054;
+            font-size: 12px;
+            font-weight: 650;
+            cursor: pointer;
+          }
+
+          .customer-history-close:hover {
+            background: #f9fafb;
+          }
+
+          .customer-history-summary {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 14px;
+            padding: 12px 14px;
+            border: 1px solid #e4e7ec;
+            border-radius: 10px;
+            background: #f9fafb;
+          }
+
+          .customer-history-customer-name {
+            color: #101828;
+            font-weight: 700;
+          }
+
+          .customer-history-current-balance {
+            color: #667085;
+            font-size: 13px;
+          }
+
+          .customer-history-current-balance strong {
+            color: #b45309;
+            font-size: 15px;
+          }
+
+          .customer-history-table-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border: 1px solid #e4e7ec;
+            border-radius: 10px;
+          }
+
+          .customer-history-table {
+            width: 100%;
+            min-width: 780px;
+            border-collapse: collapse;
+          }
+
+          .customer-history-table th,
+          .customer-history-table td {
+            padding: 11px 12px;
+            border-bottom: 1px solid #eaecf0;
+            text-align: left;
+            vertical-align: top;
+            font-size: 13px;
+          }
+
+          .customer-history-table th {
+            background: #f9fafb;
+            color: #344054;
+            font-size: 12px;
+            font-weight: 700;
+          }
+
+          .customer-history-table tbody tr:last-child td {
+            border-bottom: 0;
+          }
+
+          .history-type {
+            color: #101828;
+            font-weight: 650;
+          }
+
+          .history-reference {
+            margin-top: 2px;
+            color: #667085;
+            font-size: 12px;
+          }
+
+          .history-notes {
+            margin-top: 3px;
+            color: #98a2b3;
+            font-size: 11px;
+          }
+
+          .history-amount {
+            white-space: nowrap;
+            font-weight: 650;
+          }
+
+          .history-amount.credit {
+            color: #b45309;
+          }
+
+          .history-amount.payment {
+            color: #15803d;
+          }
+
+          .history-balance {
+            white-space: nowrap;
+            color: #101828;
+            font-weight: 700;
+          }
+
+          .history-method {
+            color: #667085;
+            white-space: nowrap;
+          }
+
+          .customer-history-final-balance {
+            margin-top: 14px;
+            padding: 14px;
+            border: 1px solid #bfdbfe;
+            border-radius: 10px;
+            background: #eff6ff;
+          }
+
+          .customer-history-final-balance-label {
+            color: #1e40af;
+            font-size: 12px;
+            font-weight: 600;
+          }
+
+          .customer-history-final-balance-value {
+            margin-top: 3px;
+            color: #1e3a8a;
+            font-size: 21px;
+            font-weight: 750;
           }
 
           @media (max-width: 900px) {
@@ -632,8 +1193,27 @@ function CustomerOutstanding() {
               margin-right: 15px;
             }
 
+            .balance-actions {
+              padding-left: 15px;
+              padding-right: 15px;
+            }
+
             .outstanding-summary-value {
               font-size: 20px;
+            }
+
+            .customer-history-section {
+              padding: 16px;
+            }
+
+            .customer-history-header,
+            .customer-history-summary {
+              align-items: flex-start;
+              flex-direction: column;
+            }
+
+            .customer-history-close {
+              width: 100%;
             }
           }
         `}
@@ -726,147 +1306,385 @@ function CustomerOutstanding() {
         ) : (
           <div className="balance-grid">
             {filteredBalances.map(
-              (customer) => (
-                <article
-                  key={
-                    customer.id
-                  }
-                  className="balance-card"
-                >
-                  <div className="balance-card-header">
-                    <h2>
-                      {
-                        customer.name
-                      }
-                    </h2>
+              (customer) => {
+                const isHistoryOpen =
+                  historyCustomerId ===
+                  String(customer.id);
 
-                    <span className="customer-type-badge">
-                      {customer.customer_type ===
-                      'SHOP'
-                        ? 'WHOLESALE'
-                        : 'RETAIL'}
-                    </span>
-                  </div>
-
-                  <div className="balance-contact">
-                    {customer.contact_person && (
-                      <p>
-                        <strong>
-                          Contact:
-                        </strong>{' '}
+                return (
+                  <article
+                    key={
+                      customer.id
+                    }
+                    className="balance-card"
+                  >
+                    <div className="balance-card-header">
+                      <h2>
                         {
-                          customer.contact_person
+                          customer.name
                         }
-                      </p>
-                    )}
+                      </h2>
 
-                    {customer.phone && (
-                      <p>
-                        <strong>
-                          Phone:
-                        </strong>{' '}
-                        {
-                          customer.phone
-                        }
-                      </p>
-                    )}
-                  </div>
+                      <span className="customer-type-badge">
+                        {customer.customer_type ===
+                        'SHOP'
+                          ? 'WHOLESALE'
+                          : 'RETAIL'}
+                      </span>
+                    </div>
 
-                  <div className="balance-breakdown">
-                    <div className="balance-item">
-                      <div className="balance-item-label">
-                        Opening Balance
+                    <div className="balance-contact">
+                      {customer.contact_person && (
+                        <p>
+                          <strong>
+                            Contact:
+                          </strong>{' '}
+                          {
+                            customer.contact_person
+                          }
+                        </p>
+                      )}
+
+                      {customer.phone && (
+                        <p>
+                          <strong>
+                            Phone:
+                          </strong>{' '}
+                          {
+                            customer.phone
+                          }
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="balance-breakdown">
+                      <div className="balance-item">
+                        <div className="balance-item-label">
+                          Opening Balance
+                        </div>
+
+                        <div className="balance-item-value">
+                          INR{' '}
+                          {
+                            formatMoney(
+                              customer.openingBalance,
+                            )
+                          }
+                        </div>
                       </div>
 
-                      <div className="balance-item-value">
+                      <div className="balance-item">
+                        <div className="balance-item-label">
+                          Total Sales
+                        </div>
+
+                        <div className="balance-item-value">
+                          INR{' '}
+                          {
+                            formatMoney(
+                              customer.totalSales,
+                            )
+                          }
+                        </div>
+                      </div>
+
+                      <div className="balance-item">
+                        <div className="balance-item-label">
+                          Paid at Sale
+                        </div>
+
+                        <div className="balance-item-value">
+                          INR{' '}
+                          {
+                            formatMoney(
+                              customer.paidAtSale,
+                            )
+                          }
+                        </div>
+                      </div>
+
+                      <div className="balance-item">
+                        <div className="balance-item-label">
+                          Payments After Sale
+                        </div>
+
+                        <div className="balance-item-value">
+                          INR{' '}
+                          {
+                            formatMoney(
+                              customer.totalLaterPaid,
+                            )
+                          }
+                        </div>
+                      </div>
+
+                      <div className="balance-item">
+                        <div className="balance-item-label">
+                          Adjustments
+                        </div>
+
+                        <div className="balance-item-value">
+                          INR{' '}
+                          {
+                            formatMoney(
+                              customer.adjustments,
+                            )
+                          }
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="balance-main">
+                      <div className="balance-main-label">
+                        Outstanding
+                      </div>
+
+                      <div className="balance-main-value">
                         INR{' '}
                         {
                           formatMoney(
-                            customer.openingBalance,
+                            customer.outstanding,
                           )
                         }
                       </div>
                     </div>
 
-                    <div className="balance-item">
-                      <div className="balance-item-label">
-                        Total Sales
-                      </div>
-
-                      <div className="balance-item-value">
-                        INR{' '}
-                        {
-                          formatMoney(
-                            customer.totalSales,
+                    <div className="balance-actions">
+                      <button
+                        type="button"
+                        className="history-button"
+                        onClick={() =>
+                          handleHistoryClick(
+                            customer.id,
                           )
                         }
-                      </div>
+                      >
+                        {isHistoryOpen
+                          ? 'Hide History'
+                          : 'History'}
+                      </button>
                     </div>
-
-                    <div className="balance-item">
-                      <div className="balance-item-label">
-                        Paid at Sale
-                      </div>
-
-                      <div className="balance-item-value">
-                        INR{' '}
-                        {
-                          formatMoney(
-                            customer.paidAtSale,
-                          )
-                        }
-                      </div>
-                    </div>
-
-                    <div className="balance-item">
-                      <div className="balance-item-label">
-                        Payments After Sale
-                      </div>
-
-                      <div className="balance-item-value">
-                        INR{' '}
-                        {
-                          formatMoney(
-                            customer.totalLaterPaid,
-                          )
-                        }
-                      </div>
-                    </div>
-
-                    <div className="balance-item">
-                      <div className="balance-item-label">
-                        Adjustments
-                      </div>
-
-                      <div className="balance-item-value">
-                        INR{' '}
-                        {
-                          formatMoney(
-                            customer.adjustments,
-                          )
-                        }
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="balance-main">
-                    <div className="balance-main-label">
-                      Outstanding
-                    </div>
-
-                    <div className="balance-main-value">
-                      INR{' '}
-                      {
-                        formatMoney(
-                          customer.outstanding,
-                        )
-                      }
-                    </div>
-                  </div>
-                </article>
-              ),
+                  </article>
+                );
+              },
             )}
           </div>
+        )}
+
+        {selectedHistoryCustomer && (
+          <section
+            ref={historySectionRef}
+            className="customer-history-section"
+          >
+            <div className="customer-history-header">
+              <div>
+                <h2>
+                  {selectedHistoryCustomer.name}{' '}
+                  — History / Ledger
+                </h2>
+
+                <p className="customer-history-description">
+                  Complete chronological account
+                  history for this customer.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="customer-history-close"
+                onClick={() =>
+                  setHistoryCustomerId('')
+                }
+              >
+                Hide History
+              </button>
+            </div>
+
+            <div className="customer-history-summary">
+              <div>
+                <div className="customer-history-customer-name">
+                  {
+                    selectedHistoryCustomer.name
+                  }
+                </div>
+
+                <div className="customer-history-current-balance">
+                  Current Outstanding:{' '}
+                  <strong>
+                    INR{' '}
+                    {formatMoney(
+                      historyEndingBalance,
+                    )}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="customer-history-current-balance">
+                {
+                  selectedHistoryCustomer.customer_type ===
+                  'SHOP'
+                    ? 'WHOLESALE'
+                    : 'RETAIL'
+                }
+              </div>
+            </div>
+
+            {historyEntries.length ===
+            0 ? (
+              <div className="balance-empty">
+                No account transactions found for
+                this customer.
+              </div>
+            ) : (
+              <>
+                <div className="customer-history-table-wrapper">
+                  <table className="customer-history-table">
+                    <thead>
+                      <tr>
+                        <th>
+                          Date &amp; Time
+                        </th>
+
+                        <th>
+                          Type
+                        </th>
+
+                        <th>
+                          Reference
+                        </th>
+
+                        <th>
+                          Amount
+                        </th>
+
+                        <th>
+                          Method
+                        </th>
+
+                        <th>
+                          Running Balance
+                        </th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {(() => {
+                        let runningBalance =
+                          0;
+
+                        return historyEntries.map(
+                          (
+                            entry,
+                          ) => {
+                            runningBalance +=
+                              entry.delta;
+
+                            return (
+                              <tr
+                                key={
+                                  entry.id
+                                }
+                              >
+                                <td>
+                                  {
+                                    formatDateTime(
+                                      entry.transactionDate,
+                                    )
+                                  }
+                                </td>
+
+                                <td>
+                                  <div className="history-type">
+                                    {
+                                      entry.typeLabel
+                                    }
+                                  </div>
+                                </td>
+
+                                <td>
+                                  <div className="history-type">
+                                    {
+                                      entry.reference
+                                    }
+                                  </div>
+
+                                  {entry.notes && (
+                                    <div className="history-notes">
+                                      {
+                                        entry.notes
+                                      }
+                                    </div>
+                                  )}
+                                </td>
+
+                                <td
+                                  className={`history-amount ${
+                                    entry.delta <
+                                    0
+                                      ? 'payment'
+                                      : 'credit'
+                                  }`}
+                                >
+                                  {
+                                    formatSignedMoney(
+                                      entry.delta,
+                                    )
+                                  }
+                                </td>
+
+                                <td className="history-method">
+                                  {
+                                    entry.paymentMethod ===
+                                    'BANK_TRANSFER'
+                                      ? 'Bank Transfer'
+                                      : entry.paymentMethod ===
+                                          'CASH'
+                                        ? 'Cash'
+                                        : entry.paymentMethod ===
+                                            'UPI'
+                                          ? 'UPI'
+                                          : entry.paymentMethod ===
+                                              'CARD'
+                                            ? 'Card'
+                                            : entry.paymentMethod ??
+                                              '—'
+                                  }
+                                </td>
+
+                                <td className="history-balance">
+                                  INR{' '}
+                                  {
+                                    formatMoney(
+                                      runningBalance,
+                                    )
+                                  }
+                                </td>
+                              </tr>
+                            );
+                          },
+                        );
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="customer-history-final-balance">
+                  <div className="customer-history-final-balance-label">
+                    Current Outstanding
+                  </div>
+
+                  <div className="customer-history-final-balance-value">
+                    INR{' '}
+                    {
+                      formatMoney(
+                        historyEndingBalance,
+                      )
+                    }
+                  </div>
+                </div>
+              </>
+            )}
+          </section>
         )}
       </main>
     </>

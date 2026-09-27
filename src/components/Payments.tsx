@@ -22,6 +22,13 @@ type Balance = {
   balance: number;
 };
 
+function getLocalDateTimeValue(date = new Date()) {
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60 * 1000);
+
+  return local.toISOString().slice(0, 16);
+}
+
 function Payments() {
   const [mode, setMode] =
     useState<'SUPPLIER' | 'CUSTOMER'>(
@@ -46,6 +53,9 @@ function Payments() {
 
   const [paymentMethod, setPaymentMethod] =
     useState('');
+
+  const [paymentDate, setPaymentDate] =
+    useState(getLocalDateTimeValue());
 
   const [notes, setNotes] = useState('');
 
@@ -325,6 +335,9 @@ function Payments() {
     setShowPartyDropdown(false);
     setAmount('');
     setPaymentMethod('');
+    setPaymentDate(
+      getLocalDateTimeValue(),
+    );
     setNotes('');
     setMessage('');
     setErrorMessage('');
@@ -419,6 +432,27 @@ function Payments() {
       return;
     }
 
+    if (!paymentDate) {
+      setErrorMessage(
+        'Payment date and time is required.',
+      );
+      return;
+    }
+
+    const paymentDateValue =
+      new Date(paymentDate);
+
+    if (
+      Number.isNaN(
+        paymentDateValue.getTime(),
+      )
+    ) {
+      setErrorMessage(
+        'Enter a valid payment date and time.',
+      );
+      return;
+    }
+
     const selectedBalance =
       availableParties.find(
         (party) =>
@@ -471,7 +505,7 @@ function Payments() {
               amount:
                 paymentAmount,
               transaction_date:
-                new Date().toISOString(),
+                paymentDateValue.toISOString(),
               payment_method:
                 paymentMethod,
               notes:
@@ -502,7 +536,7 @@ function Payments() {
               amount:
                 paymentAmount,
               transaction_date:
-                new Date().toISOString(),
+                paymentDateValue.toISOString(),
               payment_method:
                 paymentMethod,
               notes:
@@ -526,6 +560,9 @@ function Payments() {
       setShowPartyDropdown(false);
       setAmount('');
       setPaymentMethod('');
+      setPaymentDate(
+        getLocalDateTimeValue(),
+      );
       setNotes('');
 
       await loadData();
@@ -727,6 +764,12 @@ function Payments() {
 
           .payment-summary p {
             margin: 0;
+          }
+
+          .payment-date-hint {
+            margin-top: 6px;
+            color: #667085;
+            font-size: 12px;
           }
 
           .payments-message {
@@ -988,6 +1031,32 @@ function Payments() {
                 }
                 placeholder="Payment amount"
               />
+            </div>
+
+            <div className="payments-field">
+              <label htmlFor="paymentDate">
+                Payment Date &amp; Time
+              </label>
+
+              <input
+                id="paymentDate"
+                type="datetime-local"
+                value={paymentDate}
+                onChange={(
+                  event,
+                ) =>
+                  setPaymentDate(
+                    event.target
+                      .value,
+                  )
+                }
+                required
+              />
+
+              <p className="payment-date-hint">
+                Defaults to now. Change this when
+                the payment actually happened earlier.
+              </p>
             </div>
 
             <div className="payments-field">
