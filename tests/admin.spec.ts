@@ -9,14 +9,56 @@ import {
   getE2ETestData,
 } from "./e2eData";
 
+async function openDesktopMenuItem(
+  page: Page,
+  groupLabel: string,
+  itemLabel: string,
+) {
+  // Some frequently used admin pages (for example Pending Purchases)
+  // may be exposed as a direct desktop button instead of a dropdown item.
+  const directItems = page.getByRole("button", {
+    name: itemLabel,
+    exact: true,
+  });
+
+  for (let index = 0; index < await directItems.count(); index += 1) {
+    const item = directItems.nth(index);
+
+    if (await item.isVisible().catch(() => false)) {
+      await item.click();
+      return;
+    }
+  }
+
+  const groupButton = page
+    .locator(".desktop-nav-group-button")
+    .filter({ hasText: groupLabel })
+    .first();
+
+  await expect(groupButton).toBeVisible();
+  await groupButton.click();
+
+  const dropdown = page.locator(".desktop-nav-dropdown");
+
+  await expect(dropdown).toBeVisible();
+
+  await dropdown
+    .getByRole("button", {
+      name: itemLabel,
+      exact: true,
+    })
+    .click();
+}
+
 async function getSupplierOutstanding(
   page: Page,
   supplierName: string,
 ): Promise<number> {
-  await page.getByRole("button", {
-    name: "Supplier Outstanding",
-    exact: true,
-  }).click();
+  await openDesktopMenuItem(
+    page,
+    "Payments & Outstanding",
+    "Supplier Outstanding",
+  );
 
   await expect(
     page.getByRole("heading", {
@@ -36,31 +78,34 @@ async function getSupplierOutstanding(
     exact: true,
   });
 
-  const supplierExists = await supplierHeading
-    .isVisible({ timeout: 2000 })
-    .catch(() => false);
+  await expect(supplierHeading).toBeVisible();
 
-  if (!supplierExists) {
-    return 0;
-  }
-
-  const supplierArticle = supplierHeading.locator("..");
-
-  const text =
-    (await supplierArticle.textContent()) ?? "";
-
-  const match = text.match(
-    /Outstanding:\s*INR\s*([\d,]+(?:\.\d+)?)/i,
+  /*
+   * Do not depend on a specific card class.
+   * Find the nearest ancestor that contains the
+   * supplier's "Outstanding" section.
+   */
+  const supplierCard = supplierHeading.locator(
+    'xpath=ancestor::*[contains(normalize-space(.), "Outstanding")][1]',
   );
 
-  if (!match) {
+  await expect(supplierCard).toBeVisible();
+
+  const supplierText =
+    (await supplierCard.innerText()) ?? "";
+
+  const balanceMatch = supplierText.match(
+    /Outstanding\s*:?\s*(?:INR|₹)\s*([\d,]+(?:\.\d+)?)/i,
+  );
+
+  if (!balanceMatch) {
     throw new Error(
-      `Could not read outstanding for supplier "${supplierName}".`,
+      `Could not read outstanding for supplier "${supplierName}". Text: ${supplierText}`,
     );
   }
 
   return Number(
-    match[1].replace(/,/g, ""),
+    balanceMatch[1].replace(/,/g, ""),
   );
 }
 
@@ -175,6 +220,62 @@ async function getLatestSaleId(): Promise<number> {
   }
 }
 
+async function setAdjustmentType(
+  page: Page,
+  type: "INCREASE" | "DECREASE",
+) {
+  const label = type === "INCREASE" ? "Increase" : "Decrease";
+
+  const radioCandidates = [
+    page.locator(`input[type="radio"][value="${type}"]`).first(),
+    page.locator(`input[name*="adjustment" i][value="${type}"]`).first(),
+  ];
+
+  for (const radio of radioCandidates) {
+    if (await radio.count() > 0) {
+      try {
+        await radio.check({ force: true });
+        return;
+      } catch {
+        await radio.evaluate((element) => {
+          (element as HTMLInputElement).click();
+        });
+        return;
+      }
+    }
+  }
+
+  const button = page
+    .getByRole("button", { name: new RegExp(label, "i") })
+    .first();
+
+  if (await button.count() > 0 && await button.isVisible().catch(() => false)) {
+    await button.click();
+    return;
+  }
+
+  const labelElement = page
+    .locator("label")
+    .filter({ hasText: label })
+    .first();
+
+  if (await labelElement.count() > 0 && await labelElement.isVisible().catch(() => false)) {
+    await labelElement.click();
+    return;
+  }
+
+  const textControl = page
+    .getByText(label, { exact: true })
+    .first();
+
+  if (await textControl.count() > 0 && await textControl.isVisible().catch(() => false)) {
+    await textControl.click();
+    return;
+  }
+
+  throw new Error(`Could not select adjustment type ${type}.`);
+}
+
 async function findAdjustmentByReason(
   reason: string,
 ) {
@@ -221,50 +322,54 @@ test.describe("Admin", () => {
     await page.goto("/");
 
     await expect(
-      page.getByRole("button", {
+      page
+        .locator(".desktop-nav-group-button")
+        .filter({ hasText: "Administration" })
+        .first(),
+    ).toBeVisible();
+
+    await expect(
+      page
+        .locator(".desktop-nav-group-button")
+        .filter({ hasText: "Payments & Outstanding" })
+        .first(),
+    ).toBeVisible();
+
+    await openDesktopMenuItem(
+      page,
+      "Administration",
+      "Products",
+    );
+
+    await expect(
+      page.getByRole("heading", {
         name: "Products",
         exact: true,
       }),
     ).toBeVisible();
 
+    await openDesktopMenuItem(
+      page,
+      "Administration",
+      "Pending Purchases",
+    );
+
     await expect(
-      page.getByRole("button", {
+      page.getByRole("heading", {
         name: "Pending Purchases",
         exact: true,
       }),
     ).toBeVisible();
 
+    await openDesktopMenuItem(
+      page,
+      "Payments & Outstanding",
+      "Customer Outstanding",
+    );
+
     await expect(
-      page.getByRole("button", {
+      page.getByRole("heading", {
         name: "Customer Outstanding",
-        exact: true,
-      }),
-    ).toBeVisible();
-
-    await expect(
-      page.getByRole("button", {
-        name: "Supplier Outstanding",
-        exact: true,
-      }),
-    ).toBeVisible();
-
-    await expect(
-      page.getByRole("button", {
-        name: "Payments",
-        exact: true,
-      }),
-    ).toBeVisible();
-
-    await expect(
-      page.getByRole("button", {
-        name: "Stock Adjustment",
-        exact: true,
-      }),
-    ).toBeVisible();
-
-    await expect(
-      page.getByRole("button", {
-        name: "Opening Stock",
         exact: true,
       }),
     ).toBeVisible();
@@ -275,10 +380,11 @@ test.describe("Admin", () => {
   }) => {
     await page.goto("/");
 
-    await page.getByRole("button", {
-      name: "Products",
-      exact: true,
-    }).click();
+    await openDesktopMenuItem(
+      page,
+      "Administration",
+      "Products",
+    );
 
     await expect(
       page.getByRole("heading", {
@@ -293,10 +399,11 @@ test.describe("Admin", () => {
   }) => {
     await page.goto("/");
 
-    await page.getByRole("button", {
-      name: "Payments",
-      exact: true,
-    }).click();
+    await openDesktopMenuItem(
+      page,
+      "Payments & Outstanding",
+      "Payments",
+    );
 
     await expect(
       page.getByRole("heading", {
@@ -311,10 +418,11 @@ test.describe("Admin", () => {
   }) => {
     await page.goto("/");
 
-    await page.getByRole("button", {
-      name: "Customer Outstanding",
-      exact: true,
-    }).click();
+    await openDesktopMenuItem(
+      page,
+      "Payments & Outstanding",
+      "Customer Outstanding",
+    );
 
     await expect(
       page.getByRole("heading", {
@@ -346,10 +454,11 @@ test.describe("Admin", () => {
      * Step 2:
      * Receive one E2E product.
      */
-    await page.getByRole("button", {
-      name: "Receive Stock",
-      exact: true,
-    }).click();
+    await openDesktopMenuItem(
+      page,
+      "Inventory",
+      "Receive Stock",
+    );
 
     await expect(
       page.getByRole("heading", {
@@ -358,16 +467,19 @@ test.describe("Admin", () => {
       }),
     ).toBeVisible();
 
-    const supplierSelect =
-      page.getByLabel("Supplier");
+    const supplierSearch =
+      page.locator("#supplier-search");
 
-    await expect(
-      supplierSelect,
-    ).toBeAttached();
-
-    await supplierSelect.selectOption(
-      String(testData.supplierId),
+    await supplierSearch.fill(
+      "E2E Test Supplier",
     );
+
+    await page
+      .getByText("E2E Test Supplier", {
+        exact: true,
+      })
+      .last()
+      .click();
 
     const locationSelect =
       page.getByLabel("Location");
@@ -380,16 +492,19 @@ test.describe("Admin", () => {
       String(testData.locationId),
     );
 
-    const productSelect =
-      page.getByLabel("Product");
+    const productSearch =
+      page.locator("#product-search");
 
-    await expect(
-      productSelect,
-    ).toBeAttached();
-
-    await productSelect.selectOption(
-      String(testData.productId),
+    await productSearch.fill(
+      "E2E-SOF-001",
     );
+
+    await page
+      .getByText(
+        /E2E-SOF-001.*E2E Test Sofa/i,
+      )
+      .last()
+      .click();
 
     await page.getByLabel("Quantity").fill("1");
 
@@ -421,10 +536,11 @@ test.describe("Admin", () => {
      * Step 4:
      * Open Pending Purchases.
      */
-    await page.getByRole("button", {
-      name: "Pending Purchases",
-      exact: true,
-    }).click();
+    await openDesktopMenuItem(
+      page,
+      "Administration",
+      "Pending Purchases",
+    );
 
     await expect(
       page.getByRole("heading", {
@@ -444,7 +560,9 @@ test.describe("Admin", () => {
     ).toBeVisible();
 
     const purchaseContainer =
-      purchaseHeading.locator("..");
+    purchaseHeading.locator(
+      'xpath=ancestor::*[.//button[normalize-space()="Confirm Purchase"]][1]',
+    );
 
     /*
      * Step 5:
@@ -506,6 +624,10 @@ test.describe("Admin", () => {
     /*
      * Step 8:
      * Verify supplier outstanding.
+     *
+     * Purchase = ₹6,500
+     * Paid     = ₹1,000
+     * Due      = ₹5,500
      */
     await page.reload();
 
@@ -538,10 +660,11 @@ test.describe("Admin", () => {
      * Step 1:
      * Open Stock Adjustment.
      */
-    await page.getByRole("button", {
-      name: "Stock Adjustment",
-      exact: true,
-    }).click();
+    await openDesktopMenuItem(
+      page,
+      "Inventory",
+      "Stock Adjustment",
+    );
 
     await expect(
       page.getByRole("heading", {
@@ -554,16 +677,27 @@ test.describe("Admin", () => {
      * Step 2:
      * Increase stock by 1.
      */
-    await page.getByLabel("Product").selectOption(
-      String(testData.productId),
+    const productSearch =
+      page.locator(
+        "#adjustment-product-search",
+      );
+
+    await productSearch.fill(
+      "E2E-SOF-001",
     );
+
+    await page
+      .getByText(
+        /E2E-SOF-001.*E2E Test Sofa/i,
+      )
+      .last()
+      .click();
 
     await page.getByLabel("Location").selectOption(
       String(testData.locationId),
     );
 
-    await page.getByLabel("Adjustment Type")
-      .selectOption("INCREASE");
+    await setAdjustmentType(page, "INCREASE");
 
     await page.getByLabel("Quantity").fill("1");
 
@@ -607,16 +741,27 @@ test.describe("Admin", () => {
      * Step 3:
      * Decrease stock by 1.
      */
-    await page.getByLabel("Product").selectOption(
-      String(testData.productId),
+    const decreaseProductSearch =
+      page.locator(
+        "#adjustment-product-search",
+      );
+
+    await decreaseProductSearch.fill(
+      "E2E-SOF-001",
     );
+
+    await page
+      .getByText(
+        /E2E-SOF-001.*E2E Test Sofa/i,
+      )
+      .last()
+      .click();
 
     await page.getByLabel("Location").selectOption(
       String(testData.locationId),
     );
 
-    await page.getByLabel("Adjustment Type")
-      .selectOption("DECREASE");
+    await setAdjustmentType(page, "DECREASE");
 
     await page.getByLabel("Quantity").fill("1");
 
@@ -662,10 +807,11 @@ test.describe("Admin", () => {
   }) => {
     await page.goto("/");
 
-    await page.getByRole("button", {
-      name: "Supplier Outstanding",
-      exact: true,
-    }).click();
+    await openDesktopMenuItem(
+      page,
+      "Payments & Outstanding",
+      "Supplier Outstanding",
+    );
 
     await expect(
       page.getByRole("heading", {
@@ -676,59 +822,52 @@ test.describe("Admin", () => {
   });
 
   test("Admin can view Sales History", async ({
+  page,
+}) => {
+  const saleId = await getLatestSaleId();
+
+  await page.goto("/");
+
+  await openDesktopMenuItem(
     page,
-  }) => {
-    const saleId = await getLatestSaleId();
+    "Sales",
+    "Sales History",
+  );
 
-    await page.goto("/");
-
-    await page.getByRole("button", {
+  await expect(
+    page.getByRole("heading", {
       name: "Sales History",
       exact: true,
-    }).click();
+    }),
+  ).toBeVisible();
 
-    await expect(
-      page.getByRole("heading", {
-        name: "Sales History",
-        exact: true,
-      }),
-    ).toBeVisible();
+  const search = page.locator(
+    'input[type="text"][placeholder*="Search" i]',
+  ).first();
 
-    const search = page.getByLabel("Search");
+  await expect(search).toBeVisible();
 
-    await expect(search).toBeVisible();
+  await search.fill(String(saleId));
 
-    await search.fill(String(saleId));
+  const saleHeading = page.getByRole("heading", {
+    name: `Sale #${saleId}`,
+    exact: true,
+  });
 
-    const saleHeading =
-      page.getByRole("heading", {
-        name: `Sale #${saleId}`,
-        exact: true,
-      });
+  await expect(saleHeading).toBeVisible();
 
-    await expect(
-      saleHeading,
-    ).toBeVisible();
+  const saleArticle = saleHeading.locator(
+    'xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " sale-card ")][1]',
+  );
 
-    const saleArticle =
-      saleHeading.locator("..");
+// The current Sales History UI renders these labels without a colon
+// (for example `Total₹20,000`). Keep the check format-tolerant.
+await expect(saleArticle).toContainText(/Total\s*₹/);
+await expect(saleArticle).toContainText(/Paid\s*₹/);
+await expect(saleArticle).toContainText(/Due\s*₹/);
 
-    await expect(
-      saleArticle,
-    ).toContainText("Total:");
-
-    await expect(
-      saleArticle,
-    ).toContainText("Paid:");
-
-    await expect(
-      saleArticle,
-    ).toContainText("Due:");
-
-    await expect(
-      saleArticle,
-    ).not.toContainText(
-      /purchase cost|gross profit|total cost|unit cost/i,
-    );
+  await expect(saleArticle).not.toContainText(
+    /purchase cost|gross profit|total cost|unit cost/i,
+  );
   });
 });

@@ -92,6 +92,12 @@ export default function Sales() {
   const [draftProductId, setDraftProductId] =
     useState("");
 
+  const [productSearch, setProductSearch] =
+    useState("");
+
+  const [showProductDropdown, setShowProductDropdown] =
+    useState(false);
+
   const [draftLocationId, setDraftLocationId] =
     useState("");
 
@@ -104,6 +110,7 @@ export default function Sales() {
   const [cart, setCart] = useState<CartItem[]>([]);
 
   const [paidNow, setPaidNow] = useState("");
+
   const [paymentMethod, setPaymentMethod] =
     useState("CASH");
 
@@ -192,6 +199,7 @@ export default function Sales() {
     setLocations(locationsResult.data ?? []);
     setProducts(productsResult.data ?? []);
     setCustomers(customersResult.data ?? []);
+
     setStock(
       (stockResult.data ?? []).map((row) => ({
         product_id: Number(row.product_id),
@@ -225,6 +233,26 @@ export default function Sales() {
     (product) =>
       String(product.id) === draftProductId,
   );
+
+  const filteredProducts = useMemo(() => {
+    const search = productSearch
+      .trim()
+      .toLowerCase();
+
+    if (!search) {
+      return products;
+    }
+
+    return products.filter((product) => {
+      const sku = product.sku.toLowerCase();
+      const name = product.name.toLowerCase();
+
+      return (
+        sku.includes(search) ||
+        name.includes(search)
+      );
+    });
+  }, [productSearch, products]);
 
   const draftAvailableStock = getAvailableStock(
     Number(draftProductId),
@@ -340,6 +368,9 @@ export default function Sales() {
     setShowNewCustomer(false);
 
     setDraftProductId("");
+    setProductSearch("");
+    setShowProductDropdown(false);
+
     setDraftLocationId("");
     setDraftQuantity("1");
     setDraftSellingPrice("");
@@ -389,10 +420,13 @@ export default function Sales() {
       setSelectedCustomerId(
         String(existingCustomer.id),
       );
+
       setShowNewCustomer(false);
+
       setMessage(
         "Existing customer found and selected.",
       );
+
       return;
     }
 
@@ -447,6 +481,27 @@ export default function Sales() {
     setNewCustomerAddress("");
 
     setMessage("Customer created.");
+  }
+
+  function selectProduct(product: Product) {
+    setDraftProductId(String(product.id));
+
+    setProductSearch(
+      `${product.sku} - ${product.name}`,
+    );
+
+    setShowProductDropdown(false);
+
+    setErrorMessage("");
+  }
+
+  function handleProductSearchChange(
+    value: string,
+  ) {
+    setProductSearch(value);
+    setDraftProductId("");
+    setDraftSellingPrice("");
+    setShowProductDropdown(true);
   }
 
   function addCartItem() {
@@ -572,9 +627,13 @@ export default function Sales() {
     }
 
     setDraftProductId("");
+    setProductSearch("");
+    setShowProductDropdown(false);
+
     setDraftLocationId("");
     setDraftQuantity("1");
     setDraftSellingPrice("");
+
     setErrorMessage("");
   }
 
@@ -800,15 +859,9 @@ export default function Sales() {
 
     setStock(
       (data ?? []).map((row) => ({
-        product_id: Number(
-          row.product_id,
-        ),
-        location_id: Number(
-          row.location_id,
-        ),
-        quantity: Number(
-          row.quantity,
-        ),
+        product_id: Number(row.product_id),
+        location_id: Number(row.location_id),
+        quantity: Number(row.quantity),
       })),
     );
   }
@@ -826,35 +879,158 @@ export default function Sales() {
       <style>
         {`
           .sales-screen {
+            width: 100%;
             max-width: 1100px;
             margin: 0 auto;
           }
 
+          .sales-screen > h2 {
+            margin-bottom: 20px;
+          }
+
           .sales-section {
-            border: 1px solid #ccc;
-            padding: 16px;
+            margin-bottom: 20px;
+            padding: 20px;
+            background: #ffffff;
+            border: 1px solid #e4e7ec;
+            border-radius: 14px;
+            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+          }
+
+          .sales-section h3 {
             margin-bottom: 16px;
           }
 
           .sales-row {
             display: grid;
-            gap: 12px;
+            gap: 16px;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            margin-bottom: 12px;
+            margin-bottom: 16px;
+          }
+
+          .sales-field {
+            position: relative;
           }
 
           .sales-field label {
             display: block;
+            margin-bottom: 6px;
+            color: #101828;
+            font-size: 14px;
             font-weight: 600;
-            margin-bottom: 4px;
           }
 
           .sales-field input,
           .sales-field select,
           .sales-field textarea {
             width: 100%;
+            min-height: 42px;
             box-sizing: border-box;
-            padding: 8px;
+            padding: 9px 12px;
+            border: 1px solid #d0d5dd;
+            border-radius: 6px;
+            background: #ffffff;
+            color: #101828;
+            font-size: 14px;
+          }
+
+          .sales-field textarea {
+            min-height: 90px;
+          }
+
+          .sales-field input:focus,
+          .sales-field select:focus,
+          .sales-field textarea:focus {
+            border-color: #2563eb;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+          }
+
+          .product-picker {
+            position: relative;
+          }
+
+          .product-picker-input {
+            padding-right: 38px !important;
+          }
+
+          .product-picker-clear {
+            position: absolute;
+            right: 8px;
+            top: 34px;
+            width: 28px;
+            min-height: 28px;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            color: #667085;
+            font-size: 18px;
+          }
+
+          .product-picker-clear:hover {
+            background: #f2f4f7;
+            color: #101828;
+          }
+
+          .product-dropdown {
+            position: absolute;
+            z-index: 30;
+            left: 0;
+            right: 0;
+            top: calc(100% + 4px);
+            max-height: 280px;
+            overflow-y: auto;
+            border: 1px solid #d0d5dd;
+            border-radius: 8px;
+            background: #ffffff;
+            box-shadow: 0 10px 25px rgba(16, 24, 40, 0.12);
+          }
+
+          .product-option {
+            width: 100%;
+            min-height: auto;
+            display: block;
+            padding: 10px 12px;
+            border: 0;
+            border-bottom: 1px solid #f2f4f7;
+            border-radius: 0;
+            background: #ffffff;
+            text-align: left;
+          }
+
+          .product-option:last-child {
+            border-bottom: 0;
+          }
+
+          .product-option:hover {
+            background: #eff6ff;
+          }
+
+          .product-option-sku {
+            display: block;
+            color: #2563eb;
+            font-size: 13px;
+            font-weight: 700;
+          }
+
+          .product-option-name {
+            display: block;
+            margin-top: 2px;
+            color: #344054;
+            font-size: 14px;
+          }
+
+          .product-picker-hint {
+            margin-top: 6px;
+            color: #667085;
+            font-size: 12px;
+          }
+
+          .selected-product {
+            margin-top: 6px;
+            color: #15803d;
+            font-size: 13px;
+            font-weight: 600;
           }
 
           .sales-actions {
@@ -863,33 +1039,65 @@ export default function Sales() {
             flex-wrap: wrap;
           }
 
+          .sales-cart-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+
           .sales-cart {
             width: 100%;
+            min-width: 700px;
             border-collapse: collapse;
           }
 
           .sales-cart th,
           .sales-cart td {
-            border: 1px solid #ccc;
-            padding: 8px;
+            border-bottom: 1px solid #e4e7ec;
+            padding: 10px;
             text-align: left;
+            vertical-align: middle;
+          }
+
+          .sales-cart th {
+            background: #f9fafb;
+            color: #101828;
+            font-weight: 650;
           }
 
           .sales-cart input {
             width: 100%;
+            min-width: 80px;
             box-sizing: border-box;
-            padding: 6px;
+            padding: 7px 9px;
+            border: 1px solid #d0d5dd;
+            border-radius: 6px;
           }
 
           .sales-total {
+            margin-top: 16px;
             text-align: right;
             font-size: 18px;
+            color: #101828;
           }
 
           .sales-message {
             margin-bottom: 16px;
-            padding: 10px;
-            border: 1px solid #ccc;
+            padding: 11px 13px;
+            border-radius: 8px;
+            font-size: 14px;
+          }
+
+          .sales-success {
+            border: 1px solid #bbf7d0;
+            background: #f0fdf4;
+            color: #15803d;
+          }
+
+          .sales-error {
+            border: 1px solid #fecaca;
+            background: #fef2f2;
+            color: #dc2626;
           }
 
           .printable-bill {
@@ -897,12 +1105,18 @@ export default function Sales() {
           }
 
           @media (max-width: 700px) {
-            .sales-row {
-              grid-template-columns: 1fr;
+            .sales-section {
+              padding: 16px;
+              border-radius: 10px;
             }
 
-            .sales-cart {
-              font-size: 13px;
+            .sales-row {
+              grid-template-columns: 1fr;
+              gap: 14px;
+            }
+
+            .sales-actions button {
+              width: 100%;
             }
           }
 
@@ -949,13 +1163,13 @@ export default function Sales() {
         <h2>New Sale</h2>
 
         {message && (
-          <div className="sales-message">
+          <div className="sales-message sales-success">
             {message}
           </div>
         )}
 
         {errorMessage && (
-          <div className="sales-message">
+          <div className="sales-message sales-error">
             {errorMessage}
           </div>
         )}
@@ -1106,6 +1320,7 @@ export default function Sales() {
                         <option value="INDIVIDUAL">
                           Individual
                         </option>
+
                         <option value="SHOP">
                           Shop / Wholesaler
                         </option>
@@ -1190,36 +1405,96 @@ export default function Sales() {
             <h3>Add Products</h3>
 
             <div className="sales-row">
-              <div className="sales-field">
-                <label htmlFor="sale-product">
+              <div className="sales-field product-picker">
+                <label htmlFor="sale-product-search">
                   Product
                 </label>
 
-                <select
-                  id="sale-product"
-                  value={draftProductId}
+                <input
+                  id="sale-product-search"
+                  className="product-picker-input"
+                  type="text"
+                  value={productSearch}
                   onChange={(event) =>
-                    setDraftProductId(
+                    handleProductSearchChange(
                       event.target.value,
                     )
                   }
-                >
-                  <option value="">
-                    Select product
-                  </option>
+                  onFocus={() =>
+                    setShowProductDropdown(true)
+                  }
+                  placeholder="Search by SKU or product name"
+                  autoComplete="off"
+                />
 
-                  {products.map(
-                    (product) => (
-                      <option
-                        key={product.id}
-                        value={product.id}
+                {productSearch && (
+                  <button
+                    type="button"
+                    className="product-picker-clear"
+                    aria-label="Clear product"
+                    onClick={() => {
+                      setProductSearch("");
+                      setDraftProductId("");
+                      setDraftSellingPrice("");
+                      setShowProductDropdown(true);
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+
+                {showProductDropdown && (
+                  <div className="product-dropdown">
+                    {filteredProducts.length === 0 ? (
+                      <div
+                        style={{
+                          padding: "12px",
+                          color: "#667085",
+                          fontSize: "14px",
+                        }}
                       >
-                        {product.sku} -{" "}
-                        {product.name}
-                      </option>
-                    ),
-                  )}
-                </select>
+                        No products found.
+                      </div>
+                    ) : (
+                      filteredProducts.map(
+                        (product) => (
+                          <button
+                            key={product.id}
+                            type="button"
+                            className="product-option"
+                            onMouseDown={(event) =>
+                              event.preventDefault()
+                            }
+                            onClick={() =>
+                              selectProduct(
+                                product,
+                              )
+                            }
+                          >
+                            <span className="product-option-sku">
+                              {product.sku}
+                            </span>
+
+                            <span className="product-option-name">
+                              {product.name}
+                            </span>
+                          </button>
+                        ),
+                      )
+                    )}
+                  </div>
+                )}
+
+                <p className="product-picker-hint">
+                  Type SKU or product name to search.
+                </p>
+
+                {draftProduct && (
+                  <p className="selected-product">
+                    Selected: {draftProduct.sku} -{" "}
+                    {draftProduct.name}
+                  </p>
+                )}
               </div>
 
               <div className="sales-field">
@@ -1255,8 +1530,8 @@ export default function Sales() {
                           key={location.id}
                           value={location.id}
                         >
-                          {location.name}{" "}
-                          ({available} available)
+                          {location.name} (
+                          {available} available)
                         </option>
                       );
                     },
@@ -1332,126 +1607,135 @@ export default function Sales() {
                 No products added yet.
               </p>
             ) : (
-              <table className="sales-cart">
-                <thead>
-                  <tr>
-                    <th>
-                      Product
-                    </th>
-                    <th>
-                      Qty
-                    </th>
-                    <th>
-                      Selling Price
-                    </th>
-                    <th>
-                      Amount
-                    </th>
-                    <th>
-                      Action
-                    </th>
-                  </tr>
-                </thead>
+              <div className="sales-cart-wrapper">
+                <table className="sales-cart">
+                  <thead>
+                    <tr>
+                      <th>
+                        Product
+                      </th>
 
-                <tbody>
-                  {cart.map(
-                    (item) => {
-                      const product =
-                        cartProductMap.get(
-                          item.productId,
-                        );
+                      <th>
+                        Qty
+                      </th>
 
-                      const location =
-                        cartLocationMap.get(
-                          item.locationId,
-                        );
+                      <th>
+                        Selling Price
+                      </th>
 
-                      return (
-                        <tr
-                          key={item.id}
-                        >
-                          <td>
-                            <strong>
-                              {product?.sku ??
+                      <th>
+                        Amount
+                      </th>
+
+                      <th>
+                        Action
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {cart.map(
+                      (item) => {
+                        const product =
+                          cartProductMap.get(
+                            item.productId,
+                          );
+
+                        const location =
+                          cartLocationMap.get(
+                            item.locationId,
+                          );
+
+                        return (
+                          <tr
+                            key={item.id}
+                          >
+                            <td>
+                              <strong>
+                                {product?.sku ??
+                                  "-"}
+                              </strong>
+                              <br />
+
+                              {product?.name ??
                                 "-"}
-                            </strong>
-                            <br />
-                            {product?.name ??
-                              "-"}
-                            <br />
-                            <small>
-                              Stock:{" "}
-                              {location?.name ??
-                                "-"}
-                            </small>
-                          </td>
 
-                          <td>
-                            <input
-                              type="number"
-                              min="1"
-                              step="1"
-                              value={
-                                item.quantity
-                              }
-                              onChange={(
-                                event,
-                              ) =>
-                                updateCartQuantity(
-                                  item.id,
-                                  event.target
-                                    .value,
-                                )
-                              }
-                            />
-                          </td>
+                              <br />
 
-                          <td>
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={
+                              <small>
+                                Stock:{" "}
+                                {location?.name ??
+                                  "-"}
+                              </small>
+                            </td>
+
+                            <td>
+                              <input
+                                type="number"
+                                min="1"
+                                step="1"
+                                value={
+                                  item.quantity
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  updateCartQuantity(
+                                    item.id,
+                                    event.target
+                                      .value,
+                                  )
+                                }
+                              />
+                            </td>
+
+                            <td>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={
+                                  item.sellingPrice
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  updateCartPrice(
+                                    item.id,
+                                    event.target
+                                      .value,
+                                  )
+                                }
+                              />
+                            </td>
+
+                            <td>
+                              ₹
+                              {(
+                                item.quantity *
                                 item.sellingPrice
-                              }
-                              onChange={(
-                                event,
-                              ) =>
-                                updateCartPrice(
-                                  item.id,
-                                  event.target
-                                    .value,
-                                )
-                              }
-                            />
-                          </td>
+                              ).toLocaleString()}
+                            </td>
 
-                          <td>
-                            ₹
-                            {(
-                              item.quantity *
-                              item.sellingPrice
-                            ).toLocaleString()}
-                          </td>
-
-                          <td>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                removeCartItem(
-                                  item.id,
-                                )
-                              }
-                            >
-                              Remove
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    },
-                  )}
-                </tbody>
-              </table>
+                            <td>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  removeCartItem(
+                                    item.id,
+                                  )
+                                }
+                              >
+                                Remove
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      },
+                    )}
+                  </tbody>
+                </table>
+              </div>
             )}
 
             <div className="sales-total">
@@ -1507,12 +1791,15 @@ export default function Sales() {
                   <option value="CASH">
                     Cash
                   </option>
+
                   <option value="UPI">
                     UPI
                   </option>
+
                   <option value="CARD">
                     Card
                   </option>
+
                   <option value="BANK_TRANSFER">
                     Bank Transfer
                   </option>
@@ -1582,7 +1869,11 @@ export default function Sales() {
 
         {lastBill && (
           <section className="printable-bill">
-            <div style={{ textAlign: "center" }}>
+            <div
+              style={{
+                textAlign: "center",
+              }}
+            >
               <h1>
                 Sri Krishna Furniture And
                 Home Appliances
@@ -1647,12 +1938,15 @@ export default function Sales() {
                   <th>
                     Product
                   </th>
+
                   <th>
                     Qty
                   </th>
+
                   <th>
                     Rate
                   </th>
+
                   <th className="bill-right">
                     Amount
                   </th>

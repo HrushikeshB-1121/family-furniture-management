@@ -12,12 +12,20 @@ type Profile = {
 };
 
 function App() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [session, setSession] =
+    useState<Session | null>(null);
 
-  const [loading, setLoading] = useState(true);
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [profile, setProfile] =
+    useState<Profile | null>(null);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [profileLoading, setProfileLoading] =
+    useState(false);
+
+  const [errorMessage, setErrorMessage] =
+    useState('');
 
   useEffect(() => {
     void loadInitialSession();
@@ -35,14 +43,17 @@ function App() {
     };
   }, []);
 
+  const userId = session?.user.id ?? null;
+
   useEffect(() => {
-    if (!session?.user) {
+    if (!userId) {
       setProfile(null);
+      setProfileLoading(false);
       return;
     }
 
-    void loadProfile(session.user.id);
-  }, [session]);
+    void loadProfile(userId);
+  }, [userId]);
 
   async function loadInitialSession() {
     const {
@@ -59,12 +70,18 @@ function App() {
 
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, display_name, role')
+      .select(
+        'id, display_name, role',
+      )
       .eq('id', userId)
       .single();
 
     if (error) {
-      console.error('Failed to load profile:', error);
+      console.error(
+        'Failed to load profile:',
+        error,
+      );
+
       setErrorMessage(error.message);
       setProfileLoading(false);
       return;
@@ -79,10 +96,14 @@ function App() {
   }
 
   if (!session) {
-    return <Login onLoginSuccess={() => undefined} />;
+    return (
+      <Login
+        onLoginSuccess={() => undefined}
+      />
+    );
   }
 
-  if (profileLoading) {
+  if (profileLoading && !profile) {
     return <p>Loading user profile...</p>;
   }
 
