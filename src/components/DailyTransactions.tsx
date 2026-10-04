@@ -18,6 +18,7 @@ type Sale = {
         name: string;
       }
     | null;
+  sale_items: { total_cost: number | null; gross_profit: number | null }[];
 };
 
 type CustomerPayment = {
@@ -209,6 +210,9 @@ function DailyTransactions() {
           notes,
           customers (
             name
+          ),
+          sale_items (
+            *
           )
         `)
         .gte(
@@ -454,6 +458,11 @@ function DailyTransactions() {
         salesCollected,
       0,
     );
+
+  const dailyGrossProfit = useMemo(() => {
+    if (sales.some((sale) => sale.sale_items.length === 0 || sale.sale_items.some((item) => item.gross_profit === null))) return null;
+    return sales.reduce((sum, sale) => sum + sale.sale_items.reduce((itemSum, item) => itemSum + Number(item.gross_profit), 0), 0);
+  }, [sales]);
 
   const customerPaymentsTotal =
     useMemo(
@@ -1042,6 +1051,14 @@ function DailyTransactions() {
         ) : (
           <>
             <section className="daily-summary-grid">
+              <article className="daily-summary-card">
+                <div className="daily-summary-label">Gross Profit</div>
+                <div className="daily-summary-value">
+                  {dailyGrossProfit === null ? 'Unavailable' : `₹${formatMoney(dailyGrossProfit)}`}
+                </div>
+                <div className="daily-summary-meta">Only sales with recorded cost</div>
+              </article>
+
               <article className="daily-summary-card">
                 <div className="daily-summary-label">
                   Total Sales

@@ -316,6 +316,35 @@ async function findAdjustmentByReason(
 }
 
 test.describe("Admin", () => {
+  test("Admin can manage supplier details and status", async ({ page }) => {
+    const suffix = Date.now();
+    const supplierName = `E2E Supplier ${suffix}`;
+    await page.goto("/");
+    await openDesktopMenuItem(page, "People", "Suppliers");
+    await expect(page.getByRole("heading", { name: "Suppliers", exact: true })).toBeVisible();
+
+    await page.getByLabel("Supplier Name").fill(supplierName);
+    await page.getByLabel("Phone").fill("9777000001");
+    await page.getByLabel("Address").fill("E2E Supplier Address");
+    await page.getByRole("button", { name: "Add Supplier", exact: true }).click();
+    await expect(page.getByText("Supplier added successfully.")).toBeVisible();
+
+    const row = page.getByRole("row").filter({ hasText: supplierName });
+    await expect(row).toContainText("Active");
+    await row.getByRole("button", { name: "Edit" }).click();
+    await page.getByLabel("Supplier Name").fill(`${supplierName} Updated`);
+    await page.getByRole("button", { name: "Save Changes" }).click();
+    await expect(page.getByText("Supplier updated successfully.")).toBeVisible();
+
+    const updatedRow = page.getByRole("row").filter({ hasText: `${supplierName} Updated` });
+    await updatedRow.getByRole("button", { name: "Deactivate" }).click();
+    await expect(page.getByText("Supplier deactivated. Existing purchases and transactions are preserved.")).toBeVisible();
+    await expect(updatedRow).toContainText("Inactive");
+    await updatedRow.getByRole("button", { name: "Reactivate" }).click();
+    await expect(page.getByText("Supplier reactivated.")).toBeVisible();
+    await expect(page.getByRole("row").filter({ hasText: `${supplierName} Updated` })).toContainText("Active");
+  });
+
   test("Admin can see admin navigation", async ({
     page,
   }) => {
@@ -866,8 +895,7 @@ await expect(saleArticle).toContainText(/Total\s*₹/);
 await expect(saleArticle).toContainText(/Paid\s*₹/);
 await expect(saleArticle).toContainText(/Due\s*₹/);
 
-  await expect(saleArticle).not.toContainText(
-    /purchase cost|gross profit|total cost|unit cost/i,
-  );
+  await expect(saleArticle).toContainText("Total Cost");
+  await expect(saleArticle).toContainText("Gross Profit");
   });
 });

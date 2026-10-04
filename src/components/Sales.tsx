@@ -805,7 +805,7 @@ export default function Sales() {
     try {
       const { data, error } =
         await supabase.rpc(
-          "create_sale",
+          "create_sale_with_date",
           {
             p_customer_id:
               selectedCustomer.id,

@@ -328,7 +328,7 @@ function StockTransfer() {
         data,
         error,
       } = await supabase.rpc(
-        'transfer_stock',
+        'transfer_stock_with_date',
         {
           p_product_id:
             Number(productId),
@@ -348,6 +348,9 @@ function StockTransfer() {
 
           p_notes:
             notes.trim() || null,
+
+          p_transfer_date:
+            new Date().toISOString(),
         },
       );
 

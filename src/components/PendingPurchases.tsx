@@ -172,6 +172,13 @@ export default function PendingPurchases() {
       return;
     }
 
+    if (purchase.purchase_items.length !== 1) {
+      setMessage(
+        'This purchase has multiple items, but the current confirmation flow supports one item at a time. No changes were made.',
+      );
+      return;
+    }
+
     for (const item of
       purchase.purchase_items) {
       const unitCost =
@@ -242,7 +249,7 @@ export default function PendingPurchases() {
     const {
       error,
     } = await supabase.rpc(
-      'confirm_purchase',
+      'confirm_purchase_with_date',
       {
         p_purchase_id:
           purchase.id,
@@ -261,6 +268,9 @@ export default function PendingPurchases() {
                 purchase.id
               ] ?? 'CASH'
             : null,
+
+        p_payment_date:
+          new Date().toISOString(),
       },
     );
 

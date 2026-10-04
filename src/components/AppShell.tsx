@@ -9,6 +9,7 @@ import PendingPurchases from './PendingPurchases';
 import Stock from './Stock';
 import Sales from './Sales';
 import Customers from './Customers';
+import Suppliers from './Suppliers';
 import CustomerOutstanding from './CustomerOutstanding';
 import SupplierOutstanding from './SupplierOutstanding';
 import Payments from './Payments';
@@ -37,6 +38,7 @@ type View =
   | 'SALES'
   | 'RECEIVE_STOCK'
   | 'CUSTOMERS'
+  | 'SUPPLIERS'
   | 'PRODUCTS'
   | 'CATEGORIES'
   | 'PENDING_PURCHASES'
@@ -102,6 +104,11 @@ const menuItems: MenuItem[] = [
   {
     id: 'CUSTOMERS',
     label: 'Customers',
+  },
+  {
+    id: 'SUPPLIERS',
+    label: 'Suppliers',
+    adminOnly: true,
   },
   {
     id: 'PRODUCTS',
@@ -189,6 +196,7 @@ const menuGroups: MenuGroup[] = [
     label: 'People',
     items: [
       'CUSTOMERS',
+      'SUPPLIERS',
     ],
   },
 ];
@@ -379,6 +387,11 @@ function AppShell({
 
       case 'CUSTOMERS':
         return <Customers />;
+
+      case 'SUPPLIERS':
+        return profile.role === 'ADMIN'
+          ? <Suppliers />
+          : null;
 
       case 'PRODUCTS':
         return profile.role === 'ADMIN'

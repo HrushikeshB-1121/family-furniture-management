@@ -363,6 +363,11 @@ test.describe("Staff", () => {
     }),
   ).toBeVisible();
 
+  const selectedSaleDate = new Date();
+  selectedSaleDate.setDate(selectedSaleDate.getDate() - 3);
+  const localSaleDate = new Date(
+    selectedSaleDate.getTime() - selectedSaleDate.getTimezoneOffset() * 60_000,
+  ).toISOString().slice(0, 16);
   /*
    * Step 3:
    * Create a new customer using phone-first flow.
@@ -422,6 +427,12 @@ test.describe("Staff", () => {
       exact: true,
     }),
   ).toBeVisible();
+
+  // Customer creation reloads Sales, so set the historical date on the
+  // final form instance that will submit the sale.
+  const saleDateInput = page.getByLabel("Sale Date & Time");
+  await saleDateInput.fill(localSaleDate);
+  expect(await saleDateInput.inputValue()).toBe(localSaleDate);
 
   await page.getByLabel("Phone Number").fill(
     customerPhone,
@@ -517,16 +528,29 @@ test.describe("Staff", () => {
    */
   await page.getByLabel("Paid Now").fill("1000");
 
+  const saleRpcRequestPromise = page.waitForRequest((request) =>
+    request.url().endsWith("/rest/v1/rpc/create_sale_with_date"),
+  );
+
   await page.getByRole("button", {
     name: "Create Sale",
     exact: true,
   }).click();
 
-  await expect(
-    page.getByText(
-      /Sale #\d+ created successfully/i,
-    ),
-  ).toBeVisible();
+  const saleRpcRequest = await saleRpcRequestPromise;
+  const saleRpcBody = saleRpcRequest.postDataJSON();
+  expect(saleRpcBody.p_sale_date).toBe(
+    new Date(localSaleDate).toISOString(),
+  );
+
+  const saleCreatedMessage = page.getByText(
+    /Sale #\d+ created successfully/i,
+  );
+  await expect(saleCreatedMessage).toBeVisible();
+  const saleId = Number(
+    (await saleCreatedMessage.innerText()).match(/Sale #(\d+)/)?.[1],
+  );
+  expect(Number.isInteger(saleId)).toBe(true);
 
   /*
    * Step 9:
@@ -595,13 +619,10 @@ test.describe("Staff", () => {
     } = await adminClient
       .from("sales")
       .select(
-        "id, total_amount, paid_now, customer_id",
+        "id, total_amount, paid_now, customer_id, sale_date",
       )
+      .eq("id", saleId)
       .eq("customer_id", customer.id)
-      .order("created_at", {
-        ascending: false,
-      })
-      .limit(1)
       .maybeSingle();
 
     if (saleError || !sale) {
@@ -619,6 +640,9 @@ test.describe("Staff", () => {
 
     expect(Number(sale.paid_now)).toBe(
       1000,
+    );
+    expect(new Date(sale.sale_date).getTime()).toBe(
+      new Date(localSaleDate).getTime(),
     );
 
     const {

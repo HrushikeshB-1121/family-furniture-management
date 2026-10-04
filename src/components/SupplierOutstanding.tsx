@@ -11,6 +11,7 @@ type Supplier = {
   name: string;
   phone: string | null;
   address: string | null;
+  is_active: boolean;
 };
 
 type SupplierTransaction = {
@@ -96,9 +97,8 @@ function SupplierOutstanding() {
       supabase
         .from('suppliers')
         .select(
-          'id, name, phone, address',
+          'id, name, phone, address, is_active',
         )
-        .eq('is_active', true)
         .order('name'),
 
       supabase
@@ -1060,6 +1060,7 @@ function SupplierOutstanding() {
                     <div className="supplier-balance-card-header">
                       <h2>
                         {supplier.name}
+                        {!supplier.is_active && ' (Inactive)'}
                       </h2>
 
                       <span className="supplier-badge">

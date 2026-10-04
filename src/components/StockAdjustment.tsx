@@ -325,7 +325,7 @@ function StockAdjustment() {
         data,
         error,
       } = await supabase.rpc(
-        'adjust_stock',
+        'adjust_stock_with_date',
         {
           p_product_id:
             Number(productId),
@@ -341,6 +341,9 @@ function StockAdjustment() {
 
           p_notes:
             notes.trim() || null,
+
+          p_adjustment_date:
+            new Date().toISOString(),
         },
       );
 
@@ -371,7 +374,9 @@ function StockAdjustment() {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : 'Failed to adjust stock.',
+          : typeof error === 'object' && error !== null && 'message' in error
+            ? String(error.message)
+            : 'Failed to adjust stock.',
       );
     } finally {
       setSaving(false);

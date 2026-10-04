@@ -24,6 +24,9 @@ type SaleItem = {
   quantity: number;
   selling_price: number;
   total_amount: number;
+  unit_cost: number | null;
+  total_cost: number | null;
+  gross_profit: number | null;
   products: Product | null;
   locations: Location | null;
 };
@@ -87,10 +90,7 @@ export default function SalesHistory() {
           name
         ),
         sale_items (
-          id,
-          quantity,
-          selling_price,
-          total_amount,
+          *,
           products (
             sku,
             name
@@ -214,6 +214,18 @@ export default function SalesHistory() {
                       Number(
                         item.total_amount,
                       ),
+
+                    unit_cost: item.unit_cost === null || item.unit_cost === undefined
+                      ? null
+                      : Number(item.unit_cost),
+
+                    total_cost: item.total_cost === null || item.total_cost === undefined
+                      ? null
+                      : Number(item.total_cost),
+
+                    gross_profit: item.gross_profit === null || item.gross_profit === undefined
+                      ? null
+                      : Number(item.gross_profit),
 
                     products:
                       product,
@@ -367,6 +379,16 @@ export default function SalesHistory() {
         },
       );
     }, [filteredSales]);
+
+  function getSaleCost(sale: Sale): number | null {
+    if (sale.sale_items.length === 0 || sale.sale_items.some((item) => item.total_cost === null)) return null;
+    return sale.sale_items.reduce((sum, item) => sum + Number(item.total_cost), 0);
+  }
+
+  function getSaleGrossProfit(sale: Sale): number | null {
+    const cost = getSaleCost(sale);
+    return cost === null ? null : sale.total_amount - cost;
+  }
 
   function formatDate(
     value: string,
@@ -1029,6 +1051,9 @@ export default function SalesHistory() {
                             <th>
                               Total
                             </th>
+
+                            <th>Unit Cost</th>
+                            <th>Gross Profit</th>
                           </tr>
                         </thead>
 
@@ -1057,7 +1082,6 @@ export default function SalesHistory() {
                                     }
                                   </div>
                                 </td>
-
                                 <td>
                                   {
                                     item.locations
@@ -1073,7 +1097,6 @@ export default function SalesHistory() {
                                     )
                                   }
                                 </td>
-
                                 <td>
                                   ₹
                                   {
@@ -1084,7 +1107,6 @@ export default function SalesHistory() {
                                     )
                                   }
                                 </td>
-
                                 <td>
                                   ₹
                                   {
@@ -1095,6 +1117,12 @@ export default function SalesHistory() {
                                     )
                                   }
                                 </td>
+                                <td>
+                                  {item.unit_cost === null ? '—' : `₹${formatMoney(item.unit_cost)}`}
+                                </td>
+                                <td>
+                                  {item.gross_profit === null ? '—' : `₹${formatMoney(item.gross_profit)}`}
+                                </td>
                               </tr>
                             ),
                           )}
@@ -1104,6 +1132,14 @@ export default function SalesHistory() {
 
                     <div className="sale-totals">
                       <div className="sale-total-box">
+                        <div className="sale-total-row">
+                          <span>Total Cost</span>
+                          <span>{getSaleCost(sale) === null ? 'Unavailable' : `₹${formatMoney(getSaleCost(sale)!)}`}</span>
+                        </div>
+                        <div className="sale-total-row">
+                          <span>Gross Profit</span>
+                          <span>{getSaleGrossProfit(sale) === null ? 'Unavailable' : `₹${formatMoney(getSaleGrossProfit(sale)!)}`}</span>
+                        </div>
                         <div className="sale-total-row total">
                           <span>
                             Total

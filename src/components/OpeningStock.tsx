@@ -191,14 +191,15 @@ function OpeningStock() {
     setSaving(true);
 
     try {
-      const { data, error } = await supabase.rpc(
-        'set_opening_stock_batch',
-        {
-          p_location_id: Number(locationId),
-          p_items: items,
-          p_notes: notes.trim() || null,
-        },
-      );
+     const { data, error } = await supabase.rpc(
+      'set_opening_stock_batch_with_date',
+      {
+        p_location_id: Number(locationId),
+        p_items: items,
+        p_notes: notes.trim() || null,
+        p_opening_date: new Date().toISOString(),
+      },
+    );
 
       if (error) {
         throw error;

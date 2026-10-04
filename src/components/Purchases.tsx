@@ -21,6 +21,11 @@ type Location = {
   name: string;
 };
 
+function getLocalDateTimeValue(date = new Date()) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
 function Purchases() {
   const [products, setProducts] = useState<Product[]>(
     [],
@@ -63,6 +68,8 @@ function Purchases() {
 
   const [notes, setNotes] =
     useState('');
+
+  const [purchaseDate, setPurchaseDate] = useState(getLocalDateTimeValue());
 
   const [loading, setLoading] =
     useState(true);
@@ -277,6 +284,7 @@ function Purchases() {
     setQuantity('');
     setReference('');
     setNotes('');
+    setPurchaseDate(getLocalDateTimeValue());
   }
 
   async function handleSubmit(
@@ -295,6 +303,12 @@ function Purchases() {
       setErrorMessage(
         'Supplier, location and product are required.',
       );
+      return;
+    }
+
+    const purchaseDateValue = new Date(purchaseDate);
+    if (!purchaseDate || Number.isNaN(purchaseDateValue.getTime())) {
+      setErrorMessage('Enter a valid purchase date and time.');
       return;
     }
 
@@ -320,7 +334,7 @@ function Purchases() {
         data,
         error,
       } = await supabase.rpc(
-        'receive_stock',
+        'receive_stock_with_date',
         {
           p_supplier_id:
             Number(supplierId),
@@ -339,6 +353,9 @@ function Purchases() {
 
           p_notes:
             notes.trim() || null,
+
+          p_purchase_date:
+            purchaseDateValue.toISOString(),
         },
       );
 
@@ -363,7 +380,9 @@ function Purchases() {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : 'Failed to receive stock.',
+          : typeof error === 'object' && error !== null && 'message' in error
+            ? String(error.message)
+            : 'Failed to receive stock.',
       );
     } finally {
       setSaving(false);
@@ -826,6 +845,16 @@ function Purchases() {
                   {selectedProduct.name}
                 </p>
               )}
+            </div>
+
+            <div className="receive-field">
+              <label htmlFor="purchase-date">Purchase Date &amp; Time</label>
+              <input
+                id="purchase-date"
+                type="datetime-local"
+                value={purchaseDate}
+                onChange={(event) => setPurchaseDate(event.target.value)}
+              />
             </div>
 
             <div className="receive-field">
