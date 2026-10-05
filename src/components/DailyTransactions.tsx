@@ -5,6 +5,9 @@ import {
 } from 'react';
 import { supabase } from '../lib/supabase';
 
+const IST_TIME_ZONE = 'Asia/Kolkata';
+const IST_OFFSET_MINUTES = 330;
+
 type Sale = {
   id: number;
   sale_date: string;
@@ -18,7 +21,6 @@ type Sale = {
         name: string;
       }
     | null;
-  sale_items: { total_cost: number | null; gross_profit: number | null }[];
 };
 
 type CustomerPayment = {
@@ -59,6 +61,17 @@ type Expense = {
   notes: string | null;
 };
 
+type CashMovement = {
+  id: number;
+  movement_type:
+    | 'OWNER_CASH_IN'
+    | 'OWNER_CASH_OUT'
+    | 'CASH_ADJUSTMENT';
+  amount: number;
+  movement_date: string;
+  notes: string | null;
+};
+
 type PaymentMethodTotals = {
   CASH: number;
   UPI: number;
@@ -68,17 +81,23 @@ type PaymentMethodTotals = {
 };
 
 function getTodayDate() {
-  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: IST_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
 
-  const year = now.getFullYear();
-  const month = String(
-    now.getMonth() + 1,
-  ).padStart(2, '0');
-  const day = String(
-    now.getDate(),
-  ).padStart(2, '0');
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [
+        part.type,
+        part.value,
+      ]),
+  );
 
-  return `${year}-${month}-${day}`;
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function getDayBounds(dateValue: string) {
@@ -88,23 +107,33 @@ function getDayBounds(dateValue: string) {
       .map(Number);
 
   const start = new Date(
-    year,
-    month - 1,
-    day,
-    0,
-    0,
-    0,
-    0,
+    Date.UTC(
+      year,
+      month - 1,
+      day,
+      0,
+      0,
+      0,
+      0,
+    ) -
+      IST_OFFSET_MINUTES *
+        60 *
+        1000,
   );
 
   const end = new Date(
-    year,
-    month - 1,
-    day + 1,
-    0,
-    0,
-    0,
-    0,
+    Date.UTC(
+      year,
+      month - 1,
+      day + 1,
+      0,
+      0,
+      0,
+      0,
+    ) -
+      IST_OFFSET_MINUTES *
+        60 *
+        1000,
   );
 
   return {
@@ -118,6 +147,22 @@ function formatMoney(
 ) {
   return value.toLocaleString(
     'en-IN',
+  );
+}
+
+function formatTime(
+  value: string,
+) {
+  return new Date(
+    value,
+  ).toLocaleTimeString(
+    'en-IN',
+    {
+      timeZone:
+        IST_TIME_ZONE,
+      hour: '2-digit',
+      minute: '2-digit',
+    },
   );
 }
 
@@ -158,6 +203,12 @@ function DailyTransactions() {
   const [expenses, setExpenses] =
     useState<Expense[]>([]);
 
+  const [cashMovements, setCashMovements] =
+    useState<CashMovement[]>([]);
+
+  const [openingCash, setOpeningCash] =
+    useState(0);
+
   const [loading, setLoading] =
     useState(true);
 
@@ -170,6 +221,7 @@ function DailyTransactions() {
       | 'CUSTOMER_PAYMENTS'
       | 'SUPPLIER_PAYMENTS'
       | 'EXPENSES'
+      | 'CASH_MOVEMENTS'
       | null
     >(null);
 
@@ -197,6 +249,12 @@ function DailyTransactions() {
       customerPaymentsResult,
       supplierPaymentsResult,
       expensesResult,
+      cashMovementsResult,
+      priorSalesResult,
+      priorCustomerPaymentsResult,
+      priorSupplierPaymentsResult,
+      priorExpensesResult,
+      priorCashMovementsResult,
     ] = await Promise.all([
       supabase
         .from('sales')
@@ -210,9 +268,6 @@ function DailyTransactions() {
           notes,
           customers (
             name
-          ),
-          sale_items (
-            *
           )
         `)
         .gte(
@@ -323,13 +378,101 @@ function DailyTransactions() {
             ascending: true,
           },
         ),
+
+      supabase
+        .from('cash_movements')
+        .select(`
+          id,
+          movement_type,
+          amount,
+          movement_date,
+          notes
+        `)
+        .gte(
+          'movement_date',
+          startIso,
+        )
+        .lt(
+          'movement_date',
+          endIso,
+        )
+        .order(
+          'movement_date',
+          {
+            ascending: true,
+          },
+        ),
+
+      supabase
+        .from('sales')
+        .select(
+          'paid_now, payment_method, sale_date',
+        )
+        .lt(
+          'sale_date',
+          startIso,
+        ),
+
+      supabase
+        .from('customer_transactions')
+        .select(
+          'amount, payment_method, transaction_date',
+        )
+        .eq(
+          'transaction_type',
+          'PAYMENT',
+        )
+        .lt(
+          'transaction_date',
+          startIso,
+        ),
+
+      supabase
+        .from('supplier_transactions')
+        .select(
+          'amount, payment_method, transaction_date',
+        )
+        .eq(
+          'transaction_type',
+          'PAYMENT',
+        )
+        .lt(
+          'transaction_date',
+          startIso,
+        ),
+
+      supabase
+        .from('expenses')
+        .select(
+          'amount, payment_method, expense_date',
+        )
+        .lt(
+          'expense_date',
+          startIso,
+        ),
+
+      supabase
+        .from('cash_movements')
+        .select(
+          'amount, movement_type, movement_date',
+        )
+        .lt(
+          'movement_date',
+          startIso,
+        ),
     ]);
 
     const firstError =
       salesResult.error ??
       customerPaymentsResult.error ??
       supplierPaymentsResult.error ??
-      expensesResult.error;
+      expensesResult.error ??
+      cashMovementsResult.error ??
+      priorSalesResult.error ??
+      priorCustomerPaymentsResult.error ??
+      priorSupplierPaymentsResult.error ??
+      priorExpensesResult.error ??
+      priorCashMovementsResult.error;
 
     if (firstError) {
       console.error(
@@ -345,6 +488,8 @@ function DailyTransactions() {
       setCustomerPayments([]);
       setSupplierPayments([]);
       setExpenses([]);
+      setCashMovements([]);
+      setOpeningCash(0);
       setLoading(false);
 
       return;
@@ -413,6 +558,133 @@ function DailyTransactions() {
       ) as Expense[],
     );
 
+    setCashMovements(
+      (
+        cashMovementsResult.data ??
+        []
+      ).map(
+        (movement) => ({
+          ...movement,
+          id: Number(
+            movement.id,
+          ),
+          amount: Number(
+            movement.amount,
+          ),
+        }),
+      ) as CashMovement[],
+    );
+
+    const priorCashIn =
+      (priorSalesResult.data ?? []).reduce(
+        (sum, sale) =>
+          sum +
+          (sale.payment_method ===
+          'CASH'
+            ? Number(
+                sale.paid_now,
+              )
+            : 0),
+        0,
+      ) +
+      (
+        priorCustomerPaymentsResult.data ??
+        []
+      ).reduce(
+        (sum, payment) =>
+          sum +
+          (payment.payment_method ===
+          'CASH'
+            ? Number(
+                payment.amount,
+              )
+            : 0),
+        0,
+      ) +
+      (
+        priorCashMovementsResult.data ??
+        []
+      ).reduce(
+        (sum, movement) =>
+          movement.movement_type ===
+          'OWNER_CASH_IN'
+            ? sum +
+              Number(
+                movement.amount,
+              )
+            : sum,
+        0,
+      );
+
+    const priorCashOut =
+      (
+        priorSupplierPaymentsResult.data ??
+        []
+      ).reduce(
+        (sum, payment) =>
+          sum +
+          (payment.payment_method ===
+          'CASH'
+            ? Number(
+                payment.amount,
+              )
+            : 0),
+        0,
+      ) +
+      (
+        priorExpensesResult.data ??
+        []
+      ).reduce(
+        (sum, expense) =>
+          sum +
+          (expense.payment_method ===
+          'CASH'
+            ? Number(
+                expense.amount,
+              )
+            : 0),
+        0,
+      ) +
+      (
+        priorCashMovementsResult.data ??
+        []
+      ).reduce(
+        (sum, movement) =>
+          movement.movement_type ===
+          'OWNER_CASH_OUT'
+            ? sum +
+              Number(
+                movement.amount,
+              )
+            : sum,
+        0,
+      );
+
+    const priorAdjustments =
+      (
+        priorCashMovementsResult.data ??
+        []
+      ).reduce(
+        (sum, movement) =>
+          movement.movement_type ===
+          'CASH_ADJUSTMENT'
+            ? sum +
+              Number(
+                movement.amount,
+              )
+            : sum,
+        0,
+      );
+
+    const calculatedOpeningCash =
+      priorCashIn -
+      priorCashOut +
+      priorAdjustments;
+
+    setOpeningCash(
+      calculatedOpeningCash,
+    );
+
     setLoading(false);
   }
 
@@ -459,11 +731,6 @@ function DailyTransactions() {
       0,
     );
 
-  const dailyGrossProfit = useMemo(() => {
-    if (sales.some((sale) => sale.sale_items.length === 0 || sale.sale_items.some((item) => item.gross_profit === null))) return null;
-    return sales.reduce((sum, sale) => sum + sale.sale_items.reduce((itemSum, item) => itemSum + Number(item.gross_profit), 0), 0);
-  }, [sales]);
-
   const customerPaymentsTotal =
     useMemo(
       () =>
@@ -509,6 +776,141 @@ function DailyTransactions() {
       [expenses],
     );
 
+  const ownerCashInTotal =
+    useMemo(
+      () =>
+        cashMovements
+          .filter(
+            (movement) =>
+              movement.movement_type ===
+              'OWNER_CASH_IN',
+          )
+          .reduce(
+            (
+              total,
+              movement,
+            ) =>
+              total +
+              movement.amount,
+            0,
+          ),
+      [cashMovements],
+    );
+
+  const ownerCashOutTotal =
+    useMemo(
+      () =>
+        cashMovements
+          .filter(
+            (movement) =>
+              movement.movement_type ===
+              'OWNER_CASH_OUT',
+          )
+          .reduce(
+            (
+              total,
+              movement,
+            ) =>
+              total +
+              movement.amount,
+            0,
+          ),
+      [cashMovements],
+    );
+
+  const cashAdjustmentTotal =
+    useMemo(
+      () =>
+        cashMovements
+          .filter(
+            (movement) =>
+              movement.movement_type ===
+              'CASH_ADJUSTMENT',
+          )
+          .reduce(
+            (
+              total,
+              movement,
+            ) =>
+              total +
+              movement.amount,
+            0,
+          ),
+      [cashMovements],
+    );
+
+  const cashSalesCollected =
+    sales.reduce(
+      (
+        total,
+        sale,
+      ) =>
+        total +
+        (sale.payment_method ===
+        'CASH'
+          ? sale.paid_now
+          : 0),
+      0,
+    );
+
+  const cashCustomerPayments =
+    customerPayments.reduce(
+      (
+        total,
+        payment,
+      ) =>
+        total +
+        (payment.payment_method ===
+        'CASH'
+          ? payment.amount
+          : 0),
+      0,
+    );
+
+  const cashSupplierPayments =
+    supplierPayments.reduce(
+      (
+        total,
+        payment,
+      ) =>
+        total +
+        (payment.payment_method ===
+        'CASH'
+          ? payment.amount
+          : 0),
+      0,
+    );
+
+  const cashExpenses =
+    expenses.reduce(
+      (
+        total,
+        expense,
+      ) =>
+        total +
+        (expense.payment_method ===
+        'CASH'
+          ? expense.amount
+          : 0),
+      0,
+    );
+
+  const counterCashReceived =
+    cashSalesCollected +
+    cashCustomerPayments +
+    ownerCashInTotal;
+
+  const counterCashPaid =
+    cashSupplierPayments +
+    cashExpenses +
+    ownerCashOutTotal;
+
+  const closingCash =
+    openingCash +
+    counterCashReceived -
+    counterCashPaid +
+    cashAdjustmentTotal;
+
   const totalReceived =
     salesCollected +
     customerPaymentsTotal;
@@ -539,9 +941,12 @@ function DailyTransactions() {
               sale.payment_method;
 
             if (
-              method === 'CASH' ||
-              method === 'UPI' ||
-              method === 'CARD' ||
+              method ===
+                'CASH' ||
+              method ===
+                'UPI' ||
+              method ===
+                'CARD' ||
               method ===
                 'BANK_TRANSFER'
             ) {
@@ -560,9 +965,12 @@ function DailyTransactions() {
               payment.payment_method;
 
             if (
-              method === 'CASH' ||
-              method === 'UPI' ||
-              method === 'CARD' ||
+              method ===
+                'CASH' ||
+              method ===
+                'UPI' ||
+              method ===
+                'CARD' ||
               method ===
                 'BANK_TRANSFER'
             ) {
@@ -601,9 +1009,12 @@ function DailyTransactions() {
               payment.payment_method;
 
             if (
-              method === 'CASH' ||
-              method === 'UPI' ||
-              method === 'CARD' ||
+              method ===
+                'CASH' ||
+              method ===
+                'UPI' ||
+              method ===
+                'CARD' ||
               method ===
                 'BANK_TRANSFER'
             ) {
@@ -622,9 +1033,12 @@ function DailyTransactions() {
               expense.payment_method;
 
             if (
-              method === 'CASH' ||
-              method === 'UPI' ||
-              method === 'CARD' ||
+              method ===
+                'CASH' ||
+              method ===
+                'UPI' ||
+              method ===
+                'CARD' ||
               method ===
                 'BANK_TRANSFER'
             ) {
@@ -650,7 +1064,8 @@ function DailyTransactions() {
       | 'SALES'
       | 'CUSTOMER_PAYMENTS'
       | 'SUPPLIER_PAYMENTS'
-      | 'EXPENSES',
+      | 'EXPENSES'
+      | 'CASH_MOVEMENTS',
   ) {
     setExpandedSection(
       (current) =>
@@ -911,6 +1326,11 @@ function DailyTransactions() {
               repeat(5, minmax(0, 1fr));
           }
 
+          .counter-cash-grid {
+            grid-template-columns:
+              repeat(5, minmax(0, 1fr));
+          }
+
           .daily-payment-cell {
             padding: 15px;
             border-right: 1px solid #eaecf0;
@@ -1015,8 +1435,8 @@ function DailyTransactions() {
 
             <p className="daily-transactions-description">
               Day-wise summary of sales,
-              collections, supplier payments,
-              and shop expenses.
+              collections, payments, expenses,
+              and counter cash movements.
             </p>
           </div>
 
@@ -1051,14 +1471,6 @@ function DailyTransactions() {
         ) : (
           <>
             <section className="daily-summary-grid">
-              <article className="daily-summary-card">
-                <div className="daily-summary-label">Gross Profit</div>
-                <div className="daily-summary-value">
-                  {dailyGrossProfit === null ? 'Unavailable' : `₹${formatMoney(dailyGrossProfit)}`}
-                </div>
-                <div className="daily-summary-meta">Only sales with recorded cost</div>
-              </article>
-
               <article className="daily-summary-card">
                 <div className="daily-summary-label">
                   Total Sales
@@ -1195,7 +1607,7 @@ function DailyTransactions() {
                           <thead>
                             <tr>
                               <th>
-                                Time
+                                Time (IST)
                               </th>
                               <th>
                                 Bill
@@ -1227,14 +1639,8 @@ function DailyTransactions() {
                                   }
                                 >
                                   <td>
-                                    {new Date(
+                                    {formatTime(
                                       sale.sale_date,
-                                    ).toLocaleTimeString(
-                                      'en-IN',
-                                      {
-                                        hour: '2-digit',
-                                        minute: '2-digit',
-                                      },
                                     )}
                                   </td>
 
@@ -1354,7 +1760,7 @@ function DailyTransactions() {
                           <thead>
                             <tr>
                               <th>
-                                Time
+                                Time (IST)
                               </th>
                               <th>
                                 Customer
@@ -1382,14 +1788,8 @@ function DailyTransactions() {
                                   }
                                 >
                                   <td>
-                                    {new Date(
+                                    {formatTime(
                                       payment.transaction_date,
-                                    ).toLocaleTimeString(
-                                      'en-IN',
-                                      {
-                                        hour: '2-digit',
-                                        minute: '2-digit',
-                                      },
                                     )}
                                   </td>
 
@@ -1491,7 +1891,7 @@ function DailyTransactions() {
                           <thead>
                             <tr>
                               <th>
-                                Time
+                                Time (IST)
                               </th>
                               <th>
                                 Supplier
@@ -1522,14 +1922,8 @@ function DailyTransactions() {
                                   }
                                 >
                                   <td>
-                                    {new Date(
+                                    {formatTime(
                                       payment.transaction_date,
-                                    ).toLocaleTimeString(
-                                      'en-IN',
-                                      {
-                                        hour: '2-digit',
-                                        minute: '2-digit',
-                                      },
                                     )}
                                   </td>
 
@@ -1635,7 +2029,7 @@ function DailyTransactions() {
                           <thead>
                             <tr>
                               <th>
-                                Time
+                                Time (IST)
                               </th>
                               <th>
                                 Category
@@ -1663,14 +2057,8 @@ function DailyTransactions() {
                                   }
                                 >
                                   <td>
-                                    {new Date(
+                                    {formatTime(
                                       expense.expense_date,
-                                    ).toLocaleTimeString(
-                                      'en-IN',
-                                      {
-                                        hour: '2-digit',
-                                        minute: '2-digit',
-                                      },
                                     )}
                                   </td>
 
@@ -1711,6 +2099,257 @@ function DailyTransactions() {
                   </div>
                 )}
               </article>
+
+              <article className="daily-section-card">
+                <div className="daily-section-card-header">
+                  <h2 className="daily-section-title">
+                    Cash Movements
+                  </h2>
+
+                  <button
+                    type="button"
+                    className="daily-section-button"
+                    onClick={() =>
+                      toggleSection(
+                        'CASH_MOVEMENTS',
+                      )
+                    }
+                  >
+                    {expandedSection ===
+                    'CASH_MOVEMENTS'
+                      ? 'Hide Movements'
+                      : 'View Movements'}
+                  </button>
+                </div>
+
+                <div className="daily-section-main">
+                  <div className="daily-section-amount">
+                    ₹
+                    {formatMoney(
+                      ownerCashInTotal +
+                        ownerCashOutTotal,
+                    )}
+                  </div>
+
+                  <div className="daily-section-subtext">
+                    Added ₹
+                    {formatMoney(
+                      ownerCashInTotal,
+                    )}
+                    {' · '}
+                    Taken ₹
+                    {formatMoney(
+                      ownerCashOutTotal,
+                    )}
+                    {' · '}
+                    Adjustment ₹
+                    {formatMoney(
+                      cashAdjustmentTotal,
+                    )}
+                  </div>
+                </div>
+
+                {expandedSection ===
+                  'CASH_MOVEMENTS' && (
+                  <div className="daily-detail">
+                    {cashMovements.length ===
+                    0 ? (
+                      <div className="daily-detail-empty">
+                        No cash movements
+                        for this day.
+                      </div>
+                    ) : (
+                      <div className="daily-detail-table-wrapper">
+                        <table className="daily-detail-table">
+                          <thead>
+                            <tr>
+                              <th>
+                                Time (IST)
+                              </th>
+                              <th>
+                                Type
+                              </th>
+                              <th>
+                                Amount
+                              </th>
+                              <th>
+                                Notes
+                              </th>
+                            </tr>
+                          </thead>
+
+                          <tbody>
+                            {cashMovements.map(
+                              (
+                                movement,
+                              ) => {
+                                const label =
+                                  movement.movement_type ===
+                                  'OWNER_CASH_IN'
+                                    ? 'Money Added to Shop'
+                                    : movement.movement_type ===
+                                        'OWNER_CASH_OUT'
+                                      ? 'Money Taken from Shop'
+                                      : 'Cash Adjustment';
+
+                                const displayAmount =
+                                  movement.movement_type ===
+                                  'CASH_ADJUSTMENT'
+                                    ? `${
+                                        movement.amount >=
+                                        0
+                                          ? '+'
+                                          : ''
+                                      }₹${formatMoney(
+                                        movement.amount,
+                                      )}`
+                                    : `₹${formatMoney(
+                                        movement.amount,
+                                      )}`;
+
+                                return (
+                                  <tr
+                                    key={
+                                      movement.id
+                                    }
+                                  >
+                                    <td>
+                                      {formatTime(
+                                        movement.movement_date,
+                                      )}
+                                    </td>
+
+                                    <td>
+                                      <strong>
+                                        {
+                                          label
+                                        }
+                                      </strong>
+                                    </td>
+
+                                    <td>
+                                      {
+                                        displayAmount
+                                      }
+                                    </td>
+
+                                    <td>
+                                      {
+                                        movement.notes ??
+                                        '-'
+                                      }
+                                    </td>
+                                  </tr>
+                                );
+                              },
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </article>
+            </section>
+
+            <section className="daily-payment-breakdown">
+              <div className="daily-payment-breakdown-header">
+                <h2>
+                  Counter Cash
+                </h2>
+              </div>
+
+              <div className="daily-payment-grid counter-cash-grid">
+                <div className="daily-payment-cell">
+                  <div className="daily-payment-label">
+                    Opening Cash
+                  </div>
+
+                  <div className="daily-payment-value">
+                    ₹
+                    {formatMoney(
+                      openingCash,
+                    )}
+                  </div>
+
+                  <div className="daily-payment-received-label">
+                    Starts from ₹0 and carries
+                    forward automatically
+                  </div>
+                </div>
+
+                <div className="daily-payment-cell">
+                  <div className="daily-payment-label">
+                    Cash Received
+                  </div>
+
+                  <div className="daily-payment-value">
+                    ₹
+                    {formatMoney(
+                      counterCashReceived,
+                    )}
+                  </div>
+
+                  <div className="daily-payment-received-label">
+                    Cash sales + customer cash +
+                    money added
+                  </div>
+                </div>
+
+                <div className="daily-payment-cell">
+                  <div className="daily-payment-label">
+                    Cash Paid
+                  </div>
+
+                  <div className="daily-payment-value">
+                    ₹
+                    {formatMoney(
+                      counterCashPaid,
+                    )}
+                  </div>
+
+                  <div className="daily-payment-paid-label">
+                    Supplier cash + expenses +
+                    money taken
+                  </div>
+                </div>
+
+                <div className="daily-payment-cell">
+                  <div className="daily-payment-label">
+                    Cash Adjustment
+                  </div>
+
+                  <div className="daily-payment-value">
+                    ₹
+                    {formatMoney(
+                      cashAdjustmentTotal,
+                    )}
+                  </div>
+
+                  <div className="daily-payment-received-label">
+                    Positive = excess · Negative =
+                    shortage
+                  </div>
+                </div>
+
+                <div className="daily-payment-cell">
+                  <div className="daily-payment-label">
+                    Closing Cash
+                  </div>
+
+                  <div className="daily-payment-value">
+                    ₹
+                    {formatMoney(
+                      closingCash,
+                    )}
+                  </div>
+
+                  <div className="daily-payment-received-label">
+                    Expected cash remaining in the
+                    counter
+                  </div>
+                </div>
+              </div>
             </section>
 
             <section className="daily-payment-breakdown">

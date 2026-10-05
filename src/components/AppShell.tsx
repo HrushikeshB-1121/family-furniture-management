@@ -19,6 +19,7 @@ import SalesHistory from './SalesHistory';
 import OpeningStock from './OpeningStock';
 import Expenses from './Expenses';
 import DailyTransactions from './DailyTransactions';
+import CashMovements from './CashMovements';
 
 type UserRole = 'ADMIN' | 'STAFF';
 
@@ -50,7 +51,8 @@ type View =
   | 'STOCK_ADJUSTMENT'
   | 'SALES_HISTORY'
   | 'OPENING_STOCK'
-  | 'EXPENSES';
+  | 'EXPENSES'
+  | 'CASH_MOVEMENTS';
 
 type MenuItem = {
   id: View;
@@ -146,6 +148,11 @@ const menuItems: MenuItem[] = [
     adminOnly: true,
   },
   {
+    id: 'CASH_MOVEMENTS',
+    label: 'Cash Movements',
+    adminOnly: true,
+  },
+  {
     id: 'EXPENSES',
     label: 'Expenses',
     adminOnly: true,
@@ -177,6 +184,7 @@ const menuGroups: MenuGroup[] = [
     label: 'Payments & Outstanding',
     items: [
       'DAILY_TRANSACTIONS',
+      'CASH_MOVEMENTS',
       'PAYMENTS',
       'CUSTOMER_OUTSTANDING',
       'SUPPLIER_OUTSTANDING',
@@ -426,6 +434,11 @@ function AppShell({
       case 'DAILY_TRANSACTIONS':
         return profile.role === 'ADMIN'
           ? <DailyTransactions />
+          : null;
+
+      case 'CASH_MOVEMENTS':
+        return profile.role === 'ADMIN'
+          ? <CashMovements />
           : null;
 
       case 'EXPENSES':
